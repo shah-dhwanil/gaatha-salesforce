@@ -1,0 +1,14 @@
+-- 
+-- depends: 20251218_03_FB9Z9
+
+ALTER TABLE areas
+    ADD COLUMN IF NOT EXISTS area_id INT REFERENCES areas(id);
+
+ALTER TABLE areas
+    ADD COLUMN IF NOT EXISTS region_id INT REFERENCES areas(id);
+
+ALTER TABLE areas
+    ADD COLUMN IF NOT EXISTS zone_id INT REFERENCES areas(id);
+
+ALTER TABLE areas
+    ADD COLUMN IF NOT EXISTS nation_id INT REFERENCES areas(id);
