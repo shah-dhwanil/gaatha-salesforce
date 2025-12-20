@@ -4,10 +4,11 @@
 CREATE TABLE IF NOT EXISTS roles(
     name VARCHAR(32) NOT NULL,
     description TEXT,
+    permissions VARCHAR(64)[] NOT NULL DEFAULT '{}',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT pk_roles PRIMARY KEY (name)
+    CONSTRAINT pk_roles PRIMARY KEY (name,is_active)
 );
 
 CREATE TRIGGER roles_set_updated_at

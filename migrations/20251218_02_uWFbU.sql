@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS salesforce.users(
     username varchar(32) NOT NULL,
     name varchar(64) NOT NULL,
     contact_no varchar(15) NOT NULL,
-    role varchar(16) NOT NULL,
     is_active boolean DEFAULT true,
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now(),

@@ -4,9 +4,9 @@
 CREATE TABLE IF NOT EXISTS salesforce.company(
     id uuid DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
-    gst_no VARCHAR(15),
-    cin_no VARCHAR(21),
-    address TEXT,
+    gst_no VARCHAR(15) NOT NULL,
+    cin_no VARCHAR(21) NOT NULL,
+    address TEXT NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now(),
