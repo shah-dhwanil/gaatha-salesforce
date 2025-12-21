@@ -3,10 +3,15 @@ import tomllib
 from typing import Any
 from pydantic import Field
 from pydantic.fields import FieldInfo
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 from api.settings.database import DatabaseConfig
 from api.settings.server import ServerConfig
+
 
 class TomlConfigSettingsSource(PydanticBaseSettingsSource):
     """
@@ -37,7 +42,8 @@ class TomlConfigSettingsSource(PydanticBaseSettingsSource):
                 normalized[upper_key] = value
         return normalized
 
-    def get_field_value(self, field: FieldInfo, field_name: str
+    def get_field_value(
+        self, field: FieldInfo, field_name: str
     ) -> tuple[Any, str, bool]:
         """Get value for a field from TOML data."""
         # Normalize the TOML data keys to uppercase
@@ -48,6 +54,7 @@ class TomlConfigSettingsSource(PydanticBaseSettingsSource):
     def __call__(self) -> dict[str, Any]:
         """Return all values from TOML file with normalized keys."""
         return self._normalize_keys(self.toml_data)
+
 
 class Settings(BaseSettings):
     APP_NAME: str = Field(default="Salesforce", description="Application name")
@@ -62,7 +69,6 @@ class Settings(BaseSettings):
     POSTGRES: DatabaseConfig = Field(
         default_factory=DatabaseConfig, description="PostgreSQL database settings"
     )
-    
 
     model_config = SettingsConfigDict(
         env_prefix="SALESFORCE_",
@@ -72,6 +78,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -95,6 +102,7 @@ class Settings(BaseSettings):
             TomlConfigSettingsSource(settings_cls, Path("config.toml")),
             init_settings,
         )
+
 
 # Global settings instance
 _settings: Settings | None = None

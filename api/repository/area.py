@@ -5,52 +5,31 @@ import structlog
 from asyncpg import Connection, UniqueViolationError
 
 from api.database import DatabasePool
-from api.exceptions.areas import AreaAlreadyExistsException, AreaNotFoundException
-from api.models.areas import AreaInDB, AreaType
+from api.exceptions.area import AreaAlreadyExistsException, AreaNotFoundException
+from api.models.area import AreaInDB, AreaType
+from api.repository.utils import get_schema_name, set_search_path
 
 logger = structlog.get_logger(__name__)
 
 
 class AreaRepository:
     """Repository for managing area data in company-specific schemas.
-    
+
     This repository handles area operations in a multi-tenant architecture where:
     - Area information is stored in company-specific schemas (named by company_id)
-    
+
     Attributes:
         db_pool: Database connection pool for executing queries
     """
-    
+
     def __init__(self, db_pool: DatabasePool):
         """Initialize the AreaRepository with a database pool.
-        
+
         Args:
             db_pool: DatabasePool instance for managing database connections
         """
         self.db_pool = db_pool
         logger.debug("AreaRepository initialized")
-
-    async def __set_search_path(
-        self, conn: Connection, schema: str
-    ) -> None:
-        """Set the search path for the database connection.
-        
-        Args:
-            conn: Database connection
-            schema: Schema name to set in search path
-        """
-        logger.debug("Setting search path", schema=schema)
-        await conn.execute(f"SET search_path TO {schema}, public;")
-    
-    def __get_schema_name(self, company_id: UUID) -> str:
-        """Get the schema name for a given company ID.
-        
-        Args:
-            company_id: UUID of the company
-        Returns:
-            str: Schema name derived from company ID
-        """
-        return f"_{str(company_id).replace("-", "")}_"
 
     async def __create_area(
         self,
@@ -64,9 +43,9 @@ class AreaRepository:
         nation_id: Optional[int] = None,
     ) -> AreaInDB:
         """Create a new area in the database.
-        
+
         Creates area record in company-specific areas table.
-        
+
         Args:
             connection: Database connection
             company_id: UUID of the company the area belongs to
@@ -76,10 +55,10 @@ class AreaRepository:
             region_id: Optional parent region ID
             zone_id: Optional parent zone ID
             nation_id: Optional parent nation ID
-            
+
         Returns:
             AreaInDB: Created area object with all details
-            
+
         Raises:
             AreaAlreadyExistsException: If area name already exists
         """
@@ -93,15 +72,15 @@ class AreaRepository:
             has_zone_id=zone_id is not None,
             has_nation_id=nation_id is not None,
         )
-        
+
         query = """
         INSERT INTO areas (name, type, area_id, region_id, zone_id, nation_id) 
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *;
         """
-        
+
         try:
-            await self.__set_search_path(connection, self.__get_schema_name(company_id))
+            await set_search_path(connection, get_schema_name(company_id))
             rs = await connection.fetchrow(
                 query, name, type.value, area_id, region_id, zone_id, nation_id
             )
@@ -113,7 +92,13 @@ class AreaRepository:
                 error=str(e),
             )
             raise AreaAlreadyExistsException(field="name")
-        
+        if not rs:
+            logger.error(
+                "Area creation failed - no record returned",
+                name=name,
+                company_id=str(company_id),
+            )
+            raise Exception("Area creation failed")
         logger.info("Area created successfully", area_id=rs["id"], name=name)
         return AreaInDB(
             id=rs["id"],
@@ -132,31 +117,31 @@ class AreaRepository:
         self, connection: Connection, company_id: UUID, area_id: int
     ) -> AreaInDB:
         """Retrieve an area by ID.
-        
+
         Queries company-specific areas table.
-        
+
         Args:
             connection: Database connection
             company_id: UUID of the company
             area_id: Area ID to search for
-            
+
         Returns:
             AreaInDB: Complete area object
-            
+
         Raises:
             AreaNotFoundException: If area not found
         """
         logger.debug("Fetching area by ID", area_id=area_id, company_id=str(company_id))
-        
+
         find_area_query = """
         SELECT id, name, type, area_id, region_id, zone_id, nation_id, is_active, created_at, updated_at
         FROM areas
         WHERE id = $1;
         """
-        
-        await self.__set_search_path(connection, self.__get_schema_name(company_id))
+
+        await set_search_path(connection, get_schema_name(company_id))
         rs = await connection.fetchrow(find_area_query, area_id)
-        
+
         if rs:
             logger.debug(
                 "Area found",
@@ -176,7 +161,7 @@ class AreaRepository:
                 created_at=rs["created_at"],
                 updated_at=rs["updated_at"],
             )
-        
+
         logger.warning("Area not found", area_id=area_id, company_id=str(company_id))
         raise AreaNotFoundException(field="id")
 
@@ -184,31 +169,31 @@ class AreaRepository:
         self, connection: Connection, company_id: UUID, name: str
     ) -> AreaInDB:
         """Retrieve an area by name.
-        
+
         Queries company-specific areas table.
-        
+
         Args:
             connection: Database connection
             company_id: UUID of the company
             name: Area name to search for
-            
+
         Returns:
             AreaInDB: Complete area object
-            
+
         Raises:
             AreaNotFoundException: If area not found
         """
         logger.debug("Fetching area by name", name=name, company_id=str(company_id))
-        
+
         find_area_query = """
         SELECT id, name, type, area_id, region_id, zone_id, nation_id, is_active, created_at, updated_at
         FROM areas
         WHERE name = $1 AND is_active = TRUE;
         """
-        
-        await self.__set_search_path(connection, self.__get_schema_name(company_id))
+
+        await set_search_path(connection, get_schema_name(company_id))
         rs = await connection.fetchrow(find_area_query, name)
-        
+
         if rs:
             logger.debug(
                 "Area found",
@@ -228,35 +213,55 @@ class AreaRepository:
                 created_at=rs["created_at"],
                 updated_at=rs["updated_at"],
             )
-        
+
         logger.warning("Area not found", name=name, company_id=str(company_id))
         raise AreaNotFoundException(field="name")
 
     async def __get_areas_by_company_id(
-        self, connection: Connection, company_id: UUID
-    ) -> list[AreaInDB]:
-        """Retrieve all areas by company ID.
-        
-        Fetches all areas from company-specific areas table.
-        
+        self, connection: Connection, company_id: UUID, limit: int = 10, offset: int = 0
+    ) -> tuple[list[AreaInDB], int]:
+        """Retrieve all areas by company ID with pagination.
+
+        Fetches areas from company-specific areas table with pagination support.
+
         Args:
             connection: Database connection
             company_id: UUID of the company
-            
+            limit: Maximum number of records to return (default: 10)
+            offset: Number of records to skip (default: 0)
+
         Returns:
-            list[AreaInDB]: List of all areas in the company
+            tuple: (list of AreaInDB objects, total count of areas)
         """
-        logger.debug("Fetching all areas for company", company_id=str(company_id))
-        
-        find_areas_query = """
-        SELECT id, name, type, area_id, region_id, zone_id, nation_id, is_active, created_at, updated_at
+        logger.debug(
+            "Fetching areas for company with pagination",
+            company_id=str(company_id),
+            limit=limit,
+            offset=offset,
+        )
+
+        await set_search_path(connection, get_schema_name(company_id))
+
+        # Get total count
+        count_query = """
+        SELECT COUNT(*) as total
         FROM areas
         WHERE is_active = TRUE;
         """
-        
-        await self.__set_search_path(connection, self.__get_schema_name(company_id))
-        rs = await connection.fetch(find_areas_query)
-        
+        count_result = await connection.fetchrow(count_query)
+        total_count = count_result["total"] if count_result else 0
+
+        # Get paginated areas
+        find_areas_query = """
+        SELECT id, name, type, area_id, region_id, zone_id, nation_id, is_active, created_at, updated_at
+        FROM areas
+        WHERE is_active = TRUE
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2;
+        """
+
+        rs = await connection.fetch(find_areas_query, limit, offset)
+
         areas = []
         for record in rs:
             areas.append(
@@ -273,42 +278,65 @@ class AreaRepository:
                     updated_at=record["updated_at"],
                 )
             )
-        
+
         logger.debug(
-            "Areas fetched for company",
+            "Areas fetched for company with pagination",
             company_id=str(company_id),
             area_count=len(areas),
+            total_count=total_count,
         )
-        return areas
+        return areas, total_count
 
     async def __get_areas_by_type(
-        self, connection: Connection, company_id: UUID, type: AreaType
-    ) -> list[AreaInDB]:
-        """Retrieve all areas by type within a company.
-        
+        self,
+        connection: Connection,
+        company_id: UUID,
+        type: AreaType,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> tuple[list[AreaInDB], int]:
+        """Retrieve all areas by type within a company with pagination.
+
         Args:
             connection: Database connection
             company_id: UUID of the company
             type: Area type to filter by
-            
+            limit: Maximum number of records to return (default: 10)
+            offset: Number of records to skip (default: 0)
+
         Returns:
-            list[AreaInDB]: List of areas with the specified type
+            tuple: (list of AreaInDB objects, total count of areas)
         """
         logger.debug(
-            "Fetching areas by type",
+            "Fetching areas by type with pagination",
             type=type,
             company_id=str(company_id),
+            limit=limit,
+            offset=offset,
         )
-        
-        find_areas_query = """
-        SELECT id, name, type, area_id, region_id, zone_id, nation_id, is_active, created_at, updated_at
+
+        await set_search_path(connection, get_schema_name(company_id))
+
+        # Get total count
+        count_query = """
+        SELECT COUNT(*) as total
         FROM areas
         WHERE type = $1 AND is_active = TRUE;
         """
-        
-        await self.__set_search_path(connection, self.__get_schema_name(company_id))
-        rs = await connection.fetch(find_areas_query, type.value)
-        
+        count_result = await connection.fetchrow(count_query, type.value)
+        total_count = count_result["total"] if count_result else 0
+
+        # Get paginated areas
+        find_areas_query = """
+        SELECT id, name, type, area_id, region_id, zone_id, nation_id, is_active, created_at, updated_at
+        FROM areas
+        WHERE type = $1 AND is_active = TRUE
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3;
+        """
+
+        rs = await connection.fetch(find_areas_query, type.value, limit, offset)
+
         areas = []
         for record in rs:
             areas.append(
@@ -325,58 +353,96 @@ class AreaRepository:
                     updated_at=record["updated_at"],
                 )
             )
-        
+
         logger.debug(
-            "Areas fetched by type",
+            "Areas fetched by type with pagination",
             type=type,
             company_id=str(company_id),
             area_count=len(areas),
+            total_count=total_count,
         )
-        return areas
+        return areas, total_count
 
-    async def __get_areas_related_to(connection:Connection, area_id:int, area_type: AreaType, required_type:Optional[AreaType]=None) -> list[AreaInDB]:
+    async def __get_areas_related_to(
+        self,
+        connection: Connection,
+        area_id: int,
+        area_type: AreaType,
+        required_type: Optional[AreaType] = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> tuple[list[AreaInDB], int]:
         """
-        Retrieve areas related to a given area based on hierarchy.
+        Retrieve areas related to a given area based on hierarchy with pagination.
         Args:
             connection: Database connection
             area_id: ID of the reference area
             area_type: Type of the reference area
             required_type: Optional type to filter related areas
+            limit: Maximum number of records to return (default: 10)
+            offset: Number of records to skip (default: 0)
         Returns:
-            list[AreaInDB]: List of related areas
+            tuple: (list of AreaInDB objects, total count of related areas)
         """
         logger.debug(
-            "Fetching areas related to given area",
+            "Fetching areas related to given area with pagination",
             area_id=area_id,
             area_type=area_type,
             required_type=required_type,
+            limit=limit,
+            offset=offset,
         )
 
-        query = """
+        # Build WHERE clause
+        where_clause = ""
+        if area_type == AreaType.AREA:
+            where_clause = "area_id = $1"
+        elif area_type == AreaType.REGION:
+            where_clause = "region_id = $1"
+        elif area_type == AreaType.ZONE:
+            where_clause = "zone_id = $1"
+        elif area_type == AreaType.NATION:
+            where_clause = "nation_id = $1"
+        else:
+            return [], 0
+
+        if required_type:
+            where_clause += " AND type = $2"
+
+        where_clause += " AND is_active = TRUE"
+
+        # Get total count
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM areas
+        WHERE {where_clause};
+        """
+
+        if required_type:
+            count_result = await connection.fetchrow(
+                count_query, area_id, required_type.value
+            )
+        else:
+            count_result = await connection.fetchrow(count_query, area_id)
+        total_count = count_result["total"] if count_result else 0
+
+        # Get paginated areas
+        query = f"""
         SELECT id, name, type, area_id, region_id, zone_id, nation_id, is_active, created_at, updated_at
         FROM areas
-        WHERE 
+        WHERE {where_clause}
+        ORDER BY created_at DESC
         """
-        if area_type == AreaType.Area:
-            query += "area_id = $1"
-        elif area_type == AreaType.Region:
-            query += "region_id = $1"
-        elif area_type == AreaType.Zone:
-            query += "zone_id = $1"
-        elif area_type == AreaType.Nation:
-            query += "nation_id = $1"
-        else:
-            return []
 
+        # Add LIMIT and OFFSET with proper parameter numbering
         if required_type:
-            query += " AND type = $2"
-
-        query += " AND is_active = TRUE;"
-
-        if required_type:
-            rs = await connection.fetch(query, area_id, required_type.value)
+            query += " LIMIT $3 OFFSET $4;"
+            rs = await connection.fetch(
+                query, area_id, required_type.value, limit, offset
+            )
         else:
-            rs = await connection.fetch(query, area_id)
+            query += " LIMIT $2 OFFSET $3;"
+            rs = await connection.fetch(query, area_id, limit, offset)
 
         areas = []
         for record in rs:
@@ -396,13 +462,15 @@ class AreaRepository:
             )
 
         logger.debug(
-            "Related areas fetched",
+            "Related areas fetched with pagination",
             area_id=area_id,
             area_type=area_type,
             required_type=required_type,
             area_count=len(areas),
+            total_count=total_count,
         )
-        return areas
+        return areas, total_count
+
     async def __update_area(
         self,
         connection: Connection,
@@ -416,9 +484,9 @@ class AreaRepository:
         nation_id: Optional[int] = None,
     ) -> AreaInDB:
         """Update area details.
-        
+
         Updates area in company-specific areas table.
-        
+
         Args:
             connection: Database connection
             company_id: UUID of the company for schema context
@@ -429,10 +497,10 @@ class AreaRepository:
             region_id: New parent region ID (optional)
             zone_id: New parent zone ID (optional)
             nation_id: New parent nation ID (optional)
-            
+
         Returns:
             AreaInDB: Updated area object
-            
+
         Raises:
             ValueError: If no fields provided for update
             AreaNotFoundException: If area not found
@@ -449,10 +517,10 @@ class AreaRepository:
             has_zone_id=zone_id is not None,
             has_nation_id=nation_id is not None,
         )
-        
+
         update_fields = []
         update_values = []
-        
+
         if name is not None:
             update_fields.append(f"name = ${len(update_values) + 2}")
             update_values.append(name)
@@ -471,20 +539,20 @@ class AreaRepository:
         if nation_id is not None:
             update_fields.append(f"nation_id = ${len(update_values) + 2}")
             update_values.append(nation_id)
-        
+
         if not update_fields:
             logger.warning("No fields to update", area_id=area_id)
             raise ValueError("At least one field must be provided for update")
-        
-        await self.__set_search_path(connection, self.__get_schema_name(company_id))
-        
+
+        await set_search_path(connection, get_schema_name(company_id))
+
         update_query = f"""
         UPDATE areas
-        SET {', '.join(update_fields)}
+        SET {", ".join(update_fields)}
         WHERE id = $1
         RETURNING *;
         """
-        
+
         try:
             rs = await connection.fetchrow(update_query, area_id, *update_values)
         except UniqueViolationError as e:
@@ -495,11 +563,11 @@ class AreaRepository:
                 error=str(e),
             )
             raise AreaAlreadyExistsException(field="name")
-        
+
         if not rs:
             logger.warning("Area not found for update", area_id=area_id)
             raise AreaNotFoundException(field="id")
-        
+
         logger.info("Area updated successfully", area_id=area_id)
         return AreaInDB(
             id=rs["id"],
@@ -518,14 +586,14 @@ class AreaRepository:
         self, connection: Connection, company_id: UUID, area_id: int
     ) -> None:
         """Delete an area from the database (soft delete).
-        
+
         Marks area as inactive in company-specific areas table.
-        
+
         Args:
             connection: Database connection
             company_id: UUID of the company for schema context
             area_id: ID of the area to delete
-            
+
         Raises:
             AreaNotFoundException: If area not found
         """
@@ -534,20 +602,20 @@ class AreaRepository:
             area_id=area_id,
             company_id=str(company_id),
         )
-        
+
         delete_area_query = """
         UPDATE areas
         SET is_active = FALSE
         WHERE id = $1;
         """
-        
-        await self.__set_search_path(connection, self.__get_schema_name(company_id))
+
+        await set_search_path(connection, get_schema_name(company_id))
         result = await connection.execute(delete_area_query, area_id)
-        
+
         if result == "UPDATE 0":
             logger.warning("Area not found for deletion", area_id=area_id)
             raise AreaNotFoundException(field="id")
-        
+
         logger.info("Area soft deleted successfully", area_id=area_id)
 
     async def create_area(
@@ -563,9 +631,9 @@ class AreaRepository:
         connection: Optional[Connection] = None,
     ) -> AreaInDB:
         """Create a new area in the database.
-        
+
         Public interface for area creation. Manages connection pooling if needed.
-        
+
         Args:
             company_id: Company UUID
             name: Area name
@@ -575,32 +643,47 @@ class AreaRepository:
             zone_id: Optional parent zone ID
             nation_id: Optional parent nation ID
             connection: Optional existing connection (for transactions)
-            
+
         Returns:
             AreaInDB: Created area object
         """
-        logger.info("create_area called", name=name, type=type, company_id=str(company_id))
+        logger.info(
+            "create_area called", name=name, type=type, company_id=str(company_id)
+        )
         if connection is None:
             async with self.db_pool.acquire() as connection:
-                return await self.__create_area(connection, company_id, name, type, area_id, region_id, zone_id, nation_id)
-        return await self.__create_area(connection, company_id, name, type, area_id, region_id, zone_id, nation_id)
+                return await self.__create_area(
+                    connection,
+                    company_id,
+                    name,
+                    type,
+                    area_id,
+                    region_id,
+                    zone_id,
+                    nation_id,
+                )
+        return await self.__create_area(
+            connection, company_id, name, type, area_id, region_id, zone_id, nation_id
+        )
 
     async def get_area_by_id(
         self, company_id: UUID, area_id: int, *, connection: Optional[Connection] = None
     ) -> AreaInDB:
         """Retrieve an area by ID.
-        
+
         Public interface for fetching area by ID.
-        
+
         Args:
             company_id: Company UUID
             area_id: Area ID to search for
             connection: Optional existing connection
-            
+
         Returns:
             AreaInDB: Area object with complete details
         """
-        logger.info("get_area_by_id called", area_id=area_id, company_id=str(company_id))
+        logger.info(
+            "get_area_by_id called", area_id=area_id, company_id=str(company_id)
+        )
         if connection is None:
             async with self.db_pool.acquire() as connection:
                 return await self.__get_area_by_id(connection, company_id, area_id)
@@ -610,14 +693,14 @@ class AreaRepository:
         self, company_id: UUID, name: str, *, connection: Optional[Connection] = None
     ) -> AreaInDB:
         """Retrieve an area by name.
-        
+
         Public interface for fetching area by name.
-        
+
         Args:
             company_id: Company UUID
             name: Area name to search for
             connection: Optional existing connection
-            
+
         Returns:
             AreaInDB: Area object with complete details
         """
@@ -628,77 +711,125 @@ class AreaRepository:
         return await self.__get_area_by_name(connection, company_id, name)
 
     async def get_areas_by_company_id(
-        self, company_id: UUID, *, connection: Optional[Connection] = None
-    ) -> list[AreaInDB]:
-        """Retrieve all areas by company ID.
-        
-        Public interface for fetching all company areas.
-        
+        self,
+        company_id: UUID,
+        limit: int = 10,
+        offset: int = 0,
+        *,
+        connection: Optional[Connection] = None,
+    ) -> tuple[list[AreaInDB], int]:
+        """Retrieve all areas by company ID with pagination.
+
+        Public interface for fetching company areas with pagination support.
+
         Args:
             company_id: Company UUID
+            limit: Maximum number of records to return (default: 10)
+            offset: Number of records to skip (default: 0)
             connection: Optional existing connection
-            
+
         Returns:
-            list[AreaInDB]: List of all areas in the company
+            tuple: (list of AreaInDB objects, total count of areas)
         """
-        logger.info("get_areas_by_company_id called", company_id=str(company_id))
+        logger.info(
+            "get_areas_by_company_id called",
+            company_id=str(company_id),
+            limit=limit,
+            offset=offset,
+        )
         if connection is None:
             async with self.db_pool.acquire() as connection:
-                return await self.__get_areas_by_company_id(connection, company_id)
-        return await self.__get_areas_by_company_id(connection, company_id)
+                return await self.__get_areas_by_company_id(
+                    connection, company_id, limit, offset
+                )
+        return await self.__get_areas_by_company_id(
+            connection, company_id, limit, offset
+        )
 
     async def get_areas_by_type(
-        self, company_id: UUID, type: AreaType, *, connection: Optional[Connection] = None
-    ) -> list[AreaInDB]:
-        """Retrieve all areas by type within a company.
-        
-        Public interface for fetching areas by type.
-        
+        self,
+        company_id: UUID,
+        type: AreaType,
+        limit: int = 10,
+        offset: int = 0,
+        *,
+        connection: Optional[Connection] = None,
+    ) -> tuple[list[AreaInDB], int]:
+        """Retrieve all areas by type within a company with pagination.
+
+        Public interface for fetching areas by type with pagination support.
+
         Args:
             company_id: Company UUID
             type: Area type to filter by
+            limit: Maximum number of records to return (default: 10)
+            offset: Number of records to skip (default: 0)
             connection: Optional existing connection
-            
+
         Returns:
-            list[AreaInDB]: List of areas with the specified type
+            tuple: (list of AreaInDB objects, total count of areas)
         """
-        logger.info("get_areas_by_type called", type=type, company_id=str(company_id))
+        logger.info(
+            "get_areas_by_type called",
+            type=type,
+            company_id=str(company_id),
+            limit=limit,
+            offset=offset,
+        )
         if connection is None:
             async with self.db_pool.acquire() as connection:
-                return await self.__get_areas_by_type(connection, company_id, type)
-        return await self.__get_areas_by_type(connection, company_id, type)
+                return await self.__get_areas_by_type(
+                    connection, company_id, type, limit, offset
+                )
+        return await self.__get_areas_by_type(
+            connection, company_id, type, limit, offset
+        )
 
     async def get_areas_related_to(
-        self, company_id: UUID,
+        self,
+        company_id: UUID,
         area_id: int,
         area_type: AreaType,
         required_type: Optional[AreaType] = None,
-        *, connection: Optional[Connection] = None
-    ) -> list[AreaInDB]:
-        """Retrieve areas related to a given area based on hierarchy.
-        
-        Public interface for fetching related areas.
-        
+        limit: int = 10,
+        offset: int = 0,
+        *,
+        connection: Optional[Connection] = None,
+    ) -> tuple[list[AreaInDB], int]:
+        """Retrieve areas related to a given area based on hierarchy with pagination.
+
+        Public interface for fetching related areas with pagination support.
+
         Args:
             company_id: Company UUID
             area_id: ID of the reference area
             area_type: Type of the reference area
             required_type: Optional type to filter related areas
+            limit: Maximum number of records to return (default: 10)
+            offset: Number of records to skip (default: 0)
             connection: Optional existing connection
         Returns:
-            list[AreaInDB]: List of related areas
-        """        
+            tuple: (list of AreaInDB objects, total count of related areas)
+        """
         logger.info(
             "get_areas_related_to called",
             area_id=area_id,
             area_type=area_type,
             required_type=required_type,
-            company_id=str(company_id)
+            company_id=str(company_id),
+            limit=limit,
+            offset=offset,
         )
         if connection is None:
             async with self.db_pool.acquire() as connection:
-                return await self.__get_areas_related_to(connection, area_id, area_type, required_type)
-        return await self.__get_areas_related_to(connection, area_id, area_type, required_type)
+                await set_search_path(connection, get_schema_name(company_id))
+                return await self.__get_areas_related_to(
+                    connection, area_id, area_type, required_type, limit, offset
+                )
+        await set_search_path(connection, get_schema_name(company_id))
+        return await self.__get_areas_related_to(
+            connection, area_id, area_type, required_type, limit, offset
+        )
 
     async def update_area(
         self,
@@ -714,9 +845,9 @@ class AreaRepository:
         connection: Optional[Connection] = None,
     ) -> AreaInDB:
         """Update area details.
-        
+
         Public interface for updating area information.
-        
+
         Args:
             company_id: Company UUID
             area_id: ID of the area to update
@@ -727,15 +858,35 @@ class AreaRepository:
             zone_id: New parent zone ID (optional)
             nation_id: New parent nation ID (optional)
             connection: Optional existing connection
-            
+
         Returns:
             AreaInDB: Updated area object
         """
         logger.info("update_area called", area_id=area_id, company_id=str(company_id))
         if connection is None:
             async with self.db_pool.acquire() as connection:
-                return await self.__update_area(connection, company_id, area_id, name, type, area_id_parent, region_id, zone_id, nation_id)
-        return await self.__update_area(connection, company_id, area_id, name, type, area_id_parent, region_id, zone_id, nation_id)
+                return await self.__update_area(
+                    connection,
+                    company_id,
+                    area_id,
+                    name,
+                    type,
+                    area_id_parent,
+                    region_id,
+                    zone_id,
+                    nation_id,
+                )
+        return await self.__update_area(
+            connection,
+            company_id,
+            area_id,
+            name,
+            type,
+            area_id_parent,
+            region_id,
+            zone_id,
+            nation_id,
+        )
 
     async def delete_area(
         self,
@@ -745,9 +896,9 @@ class AreaRepository:
         connection: Optional[Connection] = None,
     ) -> None:
         """Delete an area from the database (soft delete).
-        
+
         Public interface for soft-deleting areas.
-        
+
         Args:
             company_id: Company UUID
             area_id: ID of the area to delete

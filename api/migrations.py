@@ -41,9 +41,8 @@ class MigrationManager:
         self.database_url = config.get_database_url("postgresql+psycopg")
 
         self._backend: Optional[DatabaseBackend] = None
-        
 
-    def _get_backend(self,migration_schema:str) -> Optional[DatabaseBackend]:
+    def _get_backend(self, migration_schema: str) -> Optional[DatabaseBackend]:
         """
         Get or create the yoyo database backend.
 
@@ -54,7 +53,9 @@ class MigrationManager:
             Exception: If backend creation fails
         """
         if self._backend is None:
-            database_url = self.database_url + f"?options=-csearch_path={migration_schema}"
+            database_url = (
+                self.database_url + f"?options=-csearch_path={migration_schema}"
+            )
             try:
                 logger.info("Creating yoyo database backend", url=self.database_url)
                 self._backend = get_backend(database_url)
@@ -63,8 +64,8 @@ class MigrationManager:
             except Exception as e:
                 logger.error("Failed to create database backend", error=str(e))
                 raise
-                
-    def apply(self,migration_schema:str):
+
+    def apply(self, migration_schema: str):
         """
         Apply all pending migrations.
 
@@ -75,9 +76,9 @@ class MigrationManager:
             backend = self._get_backend(migration_schema)
             backend
             if backend is None:
-                raise Exception("Database backend is not initialized")  
+                raise Exception("Database backend is not initialized")
         except Exception as e:
-            logger.error("Failed to apply migrations",error=str(e))
+            logger.error("Failed to apply migrations", error=str(e))
             raise
         migrations = backend.to_apply(read_migrations(self.migrations_dir))
         for migration in migrations:
@@ -86,11 +87,15 @@ class MigrationManager:
                 backend.apply_one(migration)
                 logger.info("Migration applied successfully", migration=migration)
             except Exception as e:
-                logger.error("Failed to apply migrations",migration=migration,error=str(e))
+                logger.error(
+                    "Failed to apply migrations", migration=migration, error=str(e)
+                )
                 raise
-    
+
     @classmethod
-    def apply_main_migrations(cls,config: DatabaseConfig,migrations_dir: Optional[str] = None):
+    def apply_main_migrations(
+        cls, config: DatabaseConfig, migrations_dir: Optional[str] = None
+    ):
         """
         Apply main migrations using the MigrationManager.
 
@@ -101,11 +106,16 @@ class MigrationManager:
         Raises:
             Exception: If migration application fails
         """
-        manager = cls(config,migrations_dir or "./migrations")
+        manager = cls(config, migrations_dir or "./migrations")
         manager.apply("salesforce")
 
-    @classmethod    
-    def apply_company_migrations(cls,config: DatabaseConfig,schema_name:str,migrations_dir: Optional[str] = None):
+    @classmethod
+    def apply_company_migrations(
+        cls,
+        config: DatabaseConfig,
+        schema_name: str,
+        migrations_dir: Optional[str] = None,
+    ):
         """
         Apply company-specific migrations using the MigrationManager.
 
@@ -115,5 +125,5 @@ class MigrationManager:
         Raises:
             Exception: If migration application fails
         """
-        manager = cls(config,"./migrations/company/")
+        manager = cls(config, "./migrations/company/")
         manager.apply(schema_name)

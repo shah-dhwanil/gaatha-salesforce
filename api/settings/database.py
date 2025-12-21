@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 
+
 class DatabaseConfig(BaseSettings):
     HOST: str = Field(
         default="localhost",
@@ -38,7 +39,8 @@ class DatabaseConfig(BaseSettings):
         default=10.0,
         description="Timeout for acquiring connection from pool in seconds",
     )
-    model_config = SettingsConfigDict(case_sensitive=False,extra="forbid")  # noqa: F821
+    model_config = SettingsConfigDict(case_sensitive=False, extra="forbid")  # noqa: F821
+
     @field_validator("POOL_MIN_SIZE")  # noqa: F821
     @classmethod
     def validate_pool_min_size(cls, v: int) -> int:
@@ -54,7 +56,7 @@ class DatabaseConfig(BaseSettings):
         if v < 1:
             raise ValueError("Pool maximum size must be at least 1")
         return v
-    
+
     def get_database_url(self, driver: str = "postgresql+asyncpg") -> str:
         """
         Generate database URL from configuration.
@@ -69,7 +71,7 @@ class DatabaseConfig(BaseSettings):
             f"{driver}://{self.USER}:{self.PASSWORD}@"
             f"{self.HOST}:{self.PORT}/{self.NAME}"
         )
-        
+
     @property
     def dsn(self) -> str:
         """Get PostgreSQL DSN string."""

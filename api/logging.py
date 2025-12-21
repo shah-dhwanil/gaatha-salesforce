@@ -10,14 +10,14 @@ from structlog.processors import (
     StackInfoRenderer,
     TimeStamper,
     add_log_level,
-    
 )
-from logging import NullHandler, getLogger,INFO
+from logging import NullHandler, getLogger, INFO
 from structlog.typing import EventDict
+
 __all__ = ["setup_logging"]
 
 
-def setup_logging(config,*args, **kwargs):
+def setup_logging(config, *args, **kwargs):
     def development_render(_, __, event_dict: EventDict) -> EventDict:
         if config.ENVIRONMENT == "DEV":
             console_dict = deepcopy(event_dict)
@@ -44,10 +44,10 @@ def setup_logging(config,*args, **kwargs):
             JSONRenderer(),
         ]
     )
-    
+
     handler = NullHandler()
     handler.setFormatter(formatter)
-    
+
     root = getLogger()
     root.handlers.clear()
     root.setLevel(INFO)

@@ -7,12 +7,14 @@ middleware, and lifespan management for database and logging setup.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.responses import HTMLResponse
 from api.exceptions.handler import register_exception_handlers
 from api.lifespan import lifespan
 from api.middleware import ContextMiddleware, LoggingMiddleware, RequestIDMiddleware
 from api.models.errors import HTTPException
 from api.settings import get_settings
+from api.controller.role import router as role_router
+from api.controller.area import router as area_router
 
 # Load settings
 settings = get_settings()
@@ -55,13 +57,14 @@ def create_app() -> FastAPI:
     # Add request logging middleware
 
     # Include routers here
-    # app.include_router(user_router, prefix="/api/v1")
+    app.include_router(role_router, prefix="/api/v1")
+    app.include_router(area_router, prefix="/api/v1")
 
     return app
 
 
 # Create the application instance
-app = create_app()
+app: FastAPI = create_app()
 
 
 @app.get("/")
@@ -72,6 +75,30 @@ async def root():
         "version": settings.APP_VERSION,
         "environment": settings.ENVIRONMENT,
     }
+
+
+@app.get("/scaler", include_in_schema=False)
+async def custom_swagger_ui():
+    """Custom Swagger UI endpoint."""
+    template = """
+    <!doctype html>
+<html>
+  <head>
+    <title>API Reference</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <script
+      id="api-reference"
+      data-url="/openapi.json"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>
+"""
+    return HTMLResponse(content=template, status_code=200)
 
 
 @app.get("/health/{id}")

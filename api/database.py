@@ -181,7 +181,9 @@ class DatabasePool:
         async with self.acquire() as connection:
             return await connection.execute(query, *args, timeout=timeout)
 
-    async def fetch(self, query: str, *args, timeout: Optional[float] = None) -> list[asyncpg.Record]:
+    async def fetch(
+        self, query: str, *args, timeout: Optional[float] = None
+    ) -> list[asyncpg.Record]:
         """
         Fetch all rows matching the query.
 

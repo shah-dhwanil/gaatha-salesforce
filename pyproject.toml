@@ -21,6 +21,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "fastapi[standard]>=0.125.0",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "testcontainers[postgres]>=4.13.3",

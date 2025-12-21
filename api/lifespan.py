@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
         # Setup logging configuration
         settings = get_settings()
         setup_logging(settings)
-        
+
         # Initialize database connection pool
         db_pool = init_db_pool(settings.POSTGRES)
         await db_pool.connect()

@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS areas(
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT pk_areas PRIMARY KEY (id),
+    CONSTRAINT pk_areas PRIMARY KEY (id)
 );
 
 CREATE UNIQUE INDEX uniq_areas_name_type ON areas (name, type) WHERE is_active = true;

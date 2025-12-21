@@ -1,5 +1,6 @@
-
 import sentry_sdk
+
+
 def setup_sentry():
     sentry_sdk.init(
         dsn="https://a0a16236f88452610071a2e2a6735f4c@o4509650312167424.ingest.de.sentry.io/4510538964271184",

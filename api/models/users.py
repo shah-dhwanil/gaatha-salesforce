@@ -3,6 +3,7 @@ from uuid import UUID
 from typing import Optional
 from pydantic import BaseModel
 
+
 class UserInDB(BaseModel):
     id: UUID
     username: str

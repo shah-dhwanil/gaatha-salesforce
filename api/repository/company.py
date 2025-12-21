@@ -4,42 +4,34 @@ from typing import Optional
 from asyncpg import Connection, UniqueViolationError
 from uuid_utils.compat import uuid7
 import structlog
-from api.exceptions.company import CompanyAlreadyExistsException, CompanyNotFoundException
+from api.exceptions.company import (
+    CompanyAlreadyExistsException,
+    CompanyNotFoundException,
+)
 from api.models.company import CompanyInDB
+from api.repository.utils import get_schema_name, set_search_path
 
 logger = structlog.get_logger(__name__)
 
 
 class CompanyRepository:
     """Repository for managing company data in the salesforce schema.
-    
+
     This repository handles company operations where:
     - Company information is stored in the 'salesforce.company' table
-    
+
     Attributes:
         db_pool: Database connection pool for executing queries
     """
-    
+
     def __init__(self, db_pool: DatabasePool):
         """Initialize the CompanyRepository with a database pool.
-        
+
         Args:
             db_pool: DatabasePool instance for managing database connections
         """
         self.db_pool = db_pool
         logger.debug("CompanyRepository initialized")
-
-    async def __set_search_path(
-        self, conn: Connection, schema: str = "salesforce"
-    ) -> None:
-        """Set the search path for the database connection.
-        
-        Args:
-            conn: Database connection
-            schema: Schema name to set in search path (default: 'salesforce')
-        """
-        logger.debug("Setting search path", schema=schema)
-        await conn.execute(f"SET search_path TO {schema}, public;")
 
     async def __create_company(
         self,
@@ -50,19 +42,19 @@ class CompanyRepository:
         address: str,
     ) -> CompanyInDB:
         """Create a new company in the database.
-        
+
         Creates company record in salesforce.company table.
-        
+
         Args:
             connection: Database connection
             name: Name of the company
             gst_no: GST number (required)
             cin_no: CIN number (required)
             address: Company address (required)
-            
+
         Returns:
             CompanyInDB: Created company object with all details
-            
+
         Raises:
             CompanyAlreadyExistsException: If GST or CIN number already exists
         """
@@ -74,15 +66,15 @@ class CompanyRepository:
             gst_no=gst_no,
             cin_no=cin_no,
         )
-        
+
         query = """
         INSERT INTO company (id, name, gst_no, cin_no, address) 
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *;
         """
-        
+
         try:
-            await self.__set_search_path(connection, "salesforce")
+            await set_search_path(connection, "salesforce")
             rs = await connection.fetchrow(
                 query, company_id, name, gst_no, cin_no, address
             )
@@ -101,11 +93,17 @@ class CompanyRepository:
                 error=error_msg,
             )
             raise CompanyAlreadyExistsException(
-                field=field,
-                message=f"Company with this {field} already exists."
+                field=field, message=f"Company with this {field} already exists."
             ) from e
-        
-        logger.info("Company created successfully", company_id=str(company_id), name=name)
+        if not rs:
+            logger.error(
+                "Company creation failed - no record returned",
+                name=name,
+            )
+            raise Exception("Failed to create company record.")
+        logger.info(
+            "Company created successfully", company_id=str(company_id), name=name
+        )
         return CompanyInDB(
             id=rs["id"],
             name=rs["name"],
@@ -121,30 +119,30 @@ class CompanyRepository:
         self, connection: Connection, company_id: UUID
     ) -> CompanyInDB:
         """Retrieve a company by ID.
-        
+
         Queries salesforce.company table.
-        
+
         Args:
             connection: Database connection
             company_id: UUID of the company
-            
+
         Returns:
             CompanyInDB: Complete company object
-            
+
         Raises:
             CompanyNotFoundException: If company not found
         """
         logger.debug("Fetching company by ID", company_id=str(company_id))
-        
+
         find_company_query = """
         SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
         FROM company
         WHERE id = $1;
         """
-        
-        await self.__set_search_path(connection, "salesforce")
+
+        await set_search_path(connection, "salesforce")
         rs = await connection.fetchrow(find_company_query, company_id)
-        
+
         if rs:
             logger.debug(
                 "Company found in salesforce schema",
@@ -160,7 +158,7 @@ class CompanyRepository:
                 created_at=rs["created_at"],
                 updated_at=rs["updated_at"],
             )
-        
+
         logger.warning("Company not found", company_id=str(company_id))
         raise CompanyNotFoundException(field="id")
 
@@ -168,30 +166,30 @@ class CompanyRepository:
         self, connection: Connection, gst_no: str
     ) -> CompanyInDB:
         """Retrieve a company by GST number.
-        
+
         Queries salesforce.company table.
-        
+
         Args:
             connection: Database connection
             gst_no: GST number to search for
-            
+
         Returns:
             CompanyInDB: Complete company object
-            
+
         Raises:
             CompanyNotFoundException: If company not found
         """
         logger.debug("Fetching company by GST number", gst_no=gst_no)
-        
+
         find_company_query = """
         SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
         FROM company
         WHERE gst_no = $1 AND is_active = TRUE;
         """
-        
-        await self.__set_search_path(connection, "salesforce")
+
+        await set_search_path(connection, "salesforce")
         rs = await connection.fetchrow(find_company_query, gst_no)
-        
+
         if rs:
             logger.debug(
                 "Company found in salesforce schema",
@@ -207,7 +205,7 @@ class CompanyRepository:
                 created_at=rs["created_at"],
                 updated_at=rs["updated_at"],
             )
-        
+
         logger.warning("Company not found", gst_no=gst_no)
         raise CompanyNotFoundException(field="gst_no")
 
@@ -215,30 +213,30 @@ class CompanyRepository:
         self, connection: Connection, cin_no: str
     ) -> CompanyInDB:
         """Retrieve a company by CIN number.
-        
+
         Queries salesforce.company table.
-        
+
         Args:
             connection: Database connection
             cin_no: CIN number to search for
-            
+
         Returns:
             CompanyInDB: Complete company object
-            
+
         Raises:
             CompanyNotFoundException: If company not found
         """
         logger.debug("Fetching company by CIN number", cin_no=cin_no)
-        
+
         find_company_query = """
         SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
         FROM company
         WHERE cin_no = $1 AND is_active = TRUE;
         """
-        
-        await self.__set_search_path(connection, "salesforce")
+
+        await set_search_path(connection, "salesforce")
         rs = await connection.fetchrow(find_company_query, cin_no)
-        
+
         if rs:
             logger.debug(
                 "Company found in salesforce schema",
@@ -254,34 +252,32 @@ class CompanyRepository:
                 created_at=rs["created_at"],
                 updated_at=rs["updated_at"],
             )
-        
+
         logger.warning("Company not found", cin_no=cin_no)
         raise CompanyNotFoundException(field="cin_no")
 
-    async def __get_all_companies(
-        self, connection: Connection
-    ) -> list[CompanyInDB]:
+    async def __get_all_companies(self, connection: Connection) -> list[CompanyInDB]:
         """Retrieve all active companies.
-        
+
         Fetches all companies from salesforce.company table.
-        
+
         Args:
             connection: Database connection
-            
+
         Returns:
             list[CompanyInDB]: List of all active companies
         """
         logger.debug("Fetching all companies")
-        
+
         find_companies_query = """
         SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
         FROM company
         WHERE is_active = TRUE;
         """
-        
-        await self.__set_search_path(connection, "salesforce")
+
+        await set_search_path(connection, "salesforce")
         rs = await connection.fetch(find_companies_query)
-        
+
         companies = []
         for record in rs:
             companies.append(
@@ -296,7 +292,7 @@ class CompanyRepository:
                     updated_at=record["updated_at"],
                 )
             )
-        
+
         logger.debug(
             "Companies fetched",
             company_count=len(companies),
@@ -313,9 +309,9 @@ class CompanyRepository:
         address: Optional[str] = None,
     ) -> CompanyInDB:
         """Update company details.
-        
+
         Updates company in salesforce.company table.
-        
+
         Args:
             connection: Database connection
             company_id: UUID of the company to update
@@ -323,10 +319,10 @@ class CompanyRepository:
             gst_no: New GST number (optional)
             cin_no: New CIN number (optional)
             address: New address (optional)
-            
+
         Returns:
             CompanyInDB: Updated company object
-            
+
         Raises:
             ValueError: If no fields provided for update
             CompanyNotFoundException: If company not found
@@ -340,10 +336,10 @@ class CompanyRepository:
             has_cin=cin_no is not None,
             has_address=address is not None,
         )
-        
+
         update_fields = []
         update_values = []
-        
+
         if name is not None:
             update_fields.append(f"name = ${len(update_values) + 2}")
             update_values.append(name)
@@ -356,20 +352,20 @@ class CompanyRepository:
         if address is not None:
             update_fields.append(f"address = ${len(update_values) + 2}")
             update_values.append(address)
-        
+
         if not update_fields:
             logger.error("No fields provided for update", company_id=str(company_id))
             raise ValueError("At least one field must be provided for update")
-        
-        await self.__set_search_path(connection, "salesforce")
-        
+
+        await set_search_path(connection, "salesforce")
+
         update_query = f"""
         UPDATE company
-        SET {', '.join(update_fields)}
+        SET {", ".join(update_fields)}
         WHERE id = $1
         RETURNING *;
         """
-        
+
         try:
             rs = await connection.fetchrow(update_query, company_id, *update_values)
         except UniqueViolationError as e:
@@ -382,14 +378,13 @@ class CompanyRepository:
                 error=error_msg,
             )
             raise CompanyAlreadyExistsException(
-                field=field,
-                message=f"Company with this {field} already exists."
+                field=field, message=f"Company with this {field} already exists."
             ) from e
-        
+
         if not rs:
             logger.warning("Company not found for update", company_id=str(company_id))
             raise CompanyNotFoundException(field="id")
-        
+
         logger.info("Company updated successfully", company_id=str(company_id))
         return CompanyInDB(
             id=rs["id"],
@@ -402,17 +397,15 @@ class CompanyRepository:
             updated_at=rs["updated_at"],
         )
 
-    async def __delete_company(
-        self, connection: Connection, company_id: UUID
-    ) -> None:
+    async def __delete_company(self, connection: Connection, company_id: UUID) -> None:
         """Delete a company from the database (soft delete).
-        
+
         Marks company as inactive in salesforce.company table.
-        
+
         Args:
             connection: Database connection
             company_id: UUID of the company to delete
-            
+
         Raises:
             CompanyNotFoundException: If company not found
         """
@@ -420,20 +413,20 @@ class CompanyRepository:
             "Soft deleting company",
             company_id=str(company_id),
         )
-        
+
         delete_company_query = """
         UPDATE company
         SET is_active = FALSE
         WHERE id = $1;
         """
-        
-        await self.__set_search_path(connection, "salesforce")
+
+        await set_search_path(connection, "salesforce")
         result = await connection.execute(delete_company_query, company_id)
-        
+
         if result == "UPDATE 0":
             logger.warning("Company not found for deletion", company_id=str(company_id))
             raise CompanyNotFoundException(field="id")
-        
+
         logger.info("Company soft deleted successfully", company_id=str(company_id))
 
     async def create_company(
@@ -446,16 +439,16 @@ class CompanyRepository:
         connection: Optional[Connection] = None,
     ) -> CompanyInDB:
         """Create a new company in the database.
-        
+
         Public interface for company creation. Manages connection pooling if needed.
-        
+
         Args:
             name: Company name
             gst_no: GST number (required)
             cin_no: CIN number (required)
             address: Company address (required)
             connection: Optional existing connection (for transactions)
-            
+
         Returns:
             CompanyInDB: Created company object
         """
@@ -469,13 +462,13 @@ class CompanyRepository:
         self, company_id: UUID, *, connection: Optional[Connection] = None
     ) -> CompanyInDB:
         """Retrieve a company by ID.
-        
+
         Public interface for fetching company by ID.
-        
+
         Args:
             company_id: Company UUID
             connection: Optional existing connection
-            
+
         Returns:
             CompanyInDB: Company object with complete details
         """
@@ -489,13 +482,13 @@ class CompanyRepository:
         self, gst_no: str, *, connection: Optional[Connection] = None
     ) -> CompanyInDB:
         """Retrieve a company by GST number.
-        
+
         Public interface for fetching company by GST number.
-        
+
         Args:
             gst_no: GST number to search for
             connection: Optional existing connection
-            
+
         Returns:
             CompanyInDB: Company object with complete details
         """
@@ -509,13 +502,13 @@ class CompanyRepository:
         self, cin_no: str, *, connection: Optional[Connection] = None
     ) -> CompanyInDB:
         """Retrieve a company by CIN number.
-        
+
         Public interface for fetching company by CIN number.
-        
+
         Args:
             cin_no: CIN number to search for
             connection: Optional existing connection
-            
+
         Returns:
             CompanyInDB: Company object with complete details
         """
@@ -529,12 +522,12 @@ class CompanyRepository:
         self, *, connection: Optional[Connection] = None
     ) -> list[CompanyInDB]:
         """Retrieve all active companies.
-        
+
         Public interface for fetching all companies.
-        
+
         Args:
             connection: Optional existing connection
-            
+
         Returns:
             list[CompanyInDB]: List of all active companies
         """
@@ -555,9 +548,9 @@ class CompanyRepository:
         connection: Optional[Connection] = None,
     ) -> CompanyInDB:
         """Update company details.
-        
+
         Public interface for updating company information.
-        
+
         Args:
             company_id: Company UUID
             name: New name (optional)
@@ -565,15 +558,19 @@ class CompanyRepository:
             cin_no: New CIN number (optional)
             address: New address (optional)
             connection: Optional existing connection
-            
+
         Returns:
             CompanyInDB: Updated company object
         """
         logger.info("update_company called", company_id=str(company_id))
         if connection is None:
             async with self.db_pool.acquire() as conn:
-                return await self.__update_company(conn, company_id, name, gst_no, cin_no, address)
-        return await self.__update_company(connection, company_id, name, gst_no, cin_no, address)
+                return await self.__update_company(
+                    conn, company_id, name, gst_no, cin_no, address
+                )
+        return await self.__update_company(
+            connection, company_id, name, gst_no, cin_no, address
+        )
 
     async def delete_company(
         self,
@@ -582,9 +579,9 @@ class CompanyRepository:
         connection: Optional[Connection] = None,
     ) -> None:
         """Delete a company from the database (soft delete).
-        
+
         Public interface for soft-deleting companies.
-        
+
         Args:
             company_id: Company UUID
             connection: Optional existing connection
@@ -597,3 +594,33 @@ class CompanyRepository:
             async with self.db_pool.acquire() as conn:
                 return await self.__delete_company(conn, company_id)
         return await self.__delete_company(connection, company_id)
+
+    async def create_company_schema(
+        self, company_id: UUID, *, connection: Optional[Connection] = None
+    ) -> None:
+        """Create a dedicated schema for the company.
+
+        Args:
+            company_id: UUID of the company
+            connection: Database connection
+        """
+        schema_name = get_schema_name(company_id)
+        logger.info(
+            "Creating schema for company",
+            company_id=str(company_id),
+            schema_name=schema_name,
+        )
+
+        create_schema_query = f"""
+        CREATE SCHEMA IF NOT EXISTS {schema_name};
+        """
+        if connection is None:
+            async with self.db_pool.acquire() as conn:
+                await conn.execute(create_schema_query)
+        else:
+            await connection.execute(create_schema_query)
+        logger.info(
+            "Schema created for company",
+            company_id=str(company_id),
+            schema_name=schema_name,
+        )

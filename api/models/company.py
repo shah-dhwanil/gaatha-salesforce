@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel
 
+
 class CompanyInDB(BaseModel):
     id: UUID
     name: str

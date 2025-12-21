@@ -38,12 +38,10 @@ class LoggingMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, slow_request_threshold_ms: float = 1000.0):
         super().__init__(app)
         self.slow_request_threshold_ms = slow_request_threshold_ms
-        
+
     async def dispatch(self, request: Request, call_next):
         logger = get_logger()
-        logger.info(
-            event="request_recieved"
-        )
+        logger.info(event="request_recieved")
         start_time = time()
         response = await call_next(request)
         duration_ms = (time() - start_time) * 1000

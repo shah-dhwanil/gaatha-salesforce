@@ -40,7 +40,7 @@ class ServerConfig(BaseSettings):
         default=True,
         description="Enable CORS middleware",
     )
-    CORS_ORIGINS: Annotated[list[str],NoDecode] = Field(
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(
         default=["http://localhost:3000", "http://localhost:8000"],
         description="Allowed CORS origins",
     )
@@ -48,11 +48,11 @@ class ServerConfig(BaseSettings):
         default=True,
         description="Allow credentials in CORS requests",
     )
-    CORS_ALLOW_METHODS: Annotated[list[str],NoDecode] = Field(
+    CORS_ALLOW_METHODS: Annotated[list[str], NoDecode] = Field(
         default=["*"],
         description="Allowed HTTP methods for CORS",
     )
-    CORS_ALLOW_HEADERS: Annotated[list[str],NoDecode] = Field(
+    CORS_ALLOW_HEADERS: Annotated[list[str], NoDecode] = Field(
         default=["*"],
         description="Allowed headers for CORS",
     )
@@ -76,8 +76,8 @@ class ServerConfig(BaseSettings):
         default=60,
         description="Rate limit per minute per IP",
     )
-    
-    model_config = SettingsConfigDict(case_sensitive=False,extra="forbid")
+
+    model_config = SettingsConfigDict(case_sensitive=False, extra="forbid")
 
     @field_validator("PORT")
     @classmethod
@@ -118,6 +118,3 @@ class ServerConfig(BaseSettings):
         if isinstance(v, str):
             return [header.strip() for header in v.split(",")]
         return v
-
-
-
