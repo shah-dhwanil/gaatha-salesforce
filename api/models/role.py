@@ -72,23 +72,11 @@ class CreateRoleRequest(BaseModel):
 
 class UpdateRoleRequest(BaseModel):
     """Request model for updating a role."""
-
-    company_id: UUID = Field(..., description="UUID of the company")
-    name: str = Field(
-        ..., min_length=1, max_length=100, description="Name of the role to update"
-    )
+    
     description: Optional[str] = Field(
         None, max_length=500, description="New description"
     )
     permissions: Optional[list[str]] = Field(None, description="New permissions list")
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v: str) -> str:
-        """Validate and clean role name."""
-        if not v or not v.strip():
-            raise ValueError("Role name cannot be empty or whitespace")
-        return v.strip()
 
     @field_validator("description")
     @classmethod

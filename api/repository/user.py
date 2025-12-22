@@ -629,7 +629,7 @@ class UserRepository:
         """
         logger.info("create_user called", username=username, company_id=str(company_id))
         if connection is None:
-            async with self.db_pool.acquire() as connection:
+            async with self.db_pool.transaction() as connection:
                 return await self.__create_user(
                     connection, username, name, contact_no, company_id, role, area_id
                 )
@@ -762,7 +762,7 @@ class UserRepository:
             "update_user called", user_id=str(user_id), company_id=str(company_id)
         )
         if connection is None:
-            async with self.db_pool.acquire() as connection:
+            async with self.db_pool.transaction() as connection:
                 return await self.__update_user(
                     connection, company_id, user_id, name, contact_no, role, area_id
                 )
@@ -792,6 +792,6 @@ class UserRepository:
             company_id=str(company_id),
         )
         if connection is None:
-            async with self.db_pool.acquire() as connection:
+            async with self.db_pool.transaction() as connection:
                 return await self.__delete_user(connection, user_id, company_id)
         return await self.__delete_user(connection, user_id, company_id)

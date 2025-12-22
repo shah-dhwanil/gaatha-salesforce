@@ -390,13 +390,15 @@ async def get_areas_related_to(
 
 
 @router.patch(
-    "/",
+    "/{company_id}/{area_id}",
     response_model=ResponseModel[AreaResponse],
     status_code=status.HTTP_200_OK,
     summary="Update an area",
     description="Update an existing area's details.",
 )
 async def update_area(
+    company_id: UUID,
+    area_id: int,
     request: UpdateAreaRequest,
     area_service: AreaService = Depends(get_area_service),
 ) -> ResponseModel[AreaResponse]:
@@ -414,15 +416,15 @@ async def update_area(
         HTTPException: 404 if area not found
         HTTPException: 400 if no fields provided for update
     """
-    logger.info("Updating area", area_id=request.id, company_id=str(request.company_id))
+    logger.info("Updating area", area_id=area_id, company_id=str(company_id))
 
     # Validate at least one field is provided
     if not request.has_updates():
-        area = await area_service.get_area_by_id(request.company_id, request.id)
+        area = await area_service.get_area_by_id(company_id, area_id)
     else:
         area = await area_service.update_area(
-            company_id=request.company_id,
-            id=request.id,
+            company_id=company_id,
+            id=area_id,
             name=request.name,
             type=request.type,
             area_id=request.area_id,

@@ -110,12 +110,11 @@ class CompanyService:
             await self.company_repository.create_company_schema(
                 company.id, connection=conn
             )
-            await asyncio.to_thread(
-                MigrationManager.apply_company_migrations,
-                get_settings().POSTGRES,
-                get_schema_name(company.id),
-                "create_company",
-            )
+        await asyncio.to_thread(
+            MigrationManager.apply_company_migrations,
+            get_settings().POSTGRES,
+            get_schema_name(company.id),
+        )
         logger.info(
             "Company created successfully", company_id=str(company.id), name=name
         )

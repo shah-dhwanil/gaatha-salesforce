@@ -168,8 +168,6 @@ class CreateAreaRequest(BaseModel):
 class UpdateAreaRequest(BaseModel):
     """Request model for updating an area."""
 
-    company_id: UUID = Field(..., description="UUID of the company")
-    id: int = Field(..., gt=0, description="ID of the area to update")
     name: Optional[str] = Field(
         None, min_length=1, max_length=100, description="New name"
     )

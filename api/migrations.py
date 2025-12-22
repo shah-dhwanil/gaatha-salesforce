@@ -57,7 +57,7 @@ class MigrationManager:
                 self.database_url + f"?options=-csearch_path={migration_schema}"
             )
             try:
-                logger.info("Creating yoyo database backend", url=self.database_url)
+                logger.info("Creating yoyo database backend", url=database_url)
                 self._backend = get_backend(database_url)
                 logger.info("Database backend created successfully")
                 return self._backend
@@ -83,12 +83,12 @@ class MigrationManager:
         migrations = backend.to_apply(read_migrations(self.migrations_dir))
         for migration in migrations:
             try:
-                logger.info("Applying migration", migration=migration)
+                logger.info("Applying migration", migration=str(migration))
                 backend.apply_one(migration)
-                logger.info("Migration applied successfully", migration=migration)
+                logger.info("Migration applied successfully", migration=str(migration))
             except Exception as e:
                 logger.error(
-                    "Failed to apply migrations", migration=migration, error=str(e)
+                    "Failed to apply migrations", migration=str(migration), error=str(e)
                 )
                 raise
 

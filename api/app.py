@@ -15,6 +15,8 @@ from api.models.errors import HTTPException
 from api.settings import get_settings
 from api.controller.role import router as role_router
 from api.controller.area import router as area_router
+from api.controller.company import router as company_router
+from api.controller.user import router as user_router
 
 # Load settings
 settings = get_settings()
@@ -59,6 +61,8 @@ def create_app() -> FastAPI:
     # Include routers here
     app.include_router(role_router, prefix="/api/v1")
     app.include_router(area_router, prefix="/api/v1")
+    app.include_router(company_router, prefix="/api/v1")
+    app.include_router(user_router, prefix="/api/v1")
 
     return app
 

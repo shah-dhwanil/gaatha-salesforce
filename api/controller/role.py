@@ -185,13 +185,15 @@ async def get_role_by_name(
 
 
 @router.patch(
-    "/",
+    "/{company_id}/{name}",
     response_model=ResponseModel[RoleResponse],
     status_code=status.HTTP_200_OK,
     summary="Update a role",
     description="Update an existing role's description and/or permissions.",
 )
 async def update_role(
+    company_id: UUID,
+    name: str,
     request: UpdateRoleRequest,
     role_service: RoleService = Depends(get_role_service),
 ) -> ResponseModel[RoleResponse]:
@@ -209,15 +211,15 @@ async def update_role(
         HTTPException: 404 if role not found
         HTTPException: 400 if no fields provided for update
     """
-    logger.info("Updating role", name=request.name, company_id=str(request.company_id))
+    logger.info("Updating role", name=name, company_id=str(company_id))
 
     # Validate at least one field is provided
     if not request.has_updates():
-        role = await role_service.get_role_by_name(request.company_id, request.name)
+        role = await role_service.get_role_by_name(company_id, name)
     else:
         role = await role_service.update_role(
-            company_id=request.company_id,
-            name=request.name,
+            company_id=company_id,
+            name=name,
             description=request.description,
             permissions=request.permissions,
         )
