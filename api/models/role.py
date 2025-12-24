@@ -72,7 +72,7 @@ class CreateRoleRequest(BaseModel):
 
 class UpdateRoleRequest(BaseModel):
     """Request model for updating a role."""
-    
+
     description: Optional[str] = Field(
         None, max_length=500, description="New description"
     )

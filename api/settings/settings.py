@@ -11,6 +11,7 @@ from pydantic_settings import (
 
 from api.settings.database import DatabaseConfig
 from api.settings.server import ServerConfig
+from api.settings.jwt import JWTConfig
 
 
 class TomlConfigSettingsSource(PydanticBaseSettingsSource):
@@ -68,6 +69,9 @@ class Settings(BaseSettings):
     )
     POSTGRES: DatabaseConfig = Field(
         default_factory=DatabaseConfig, description="PostgreSQL database settings"
+    )
+    JWT: JWTConfig = Field(
+        default_factory=JWTConfig, description="JWT authentication settings"
     )
 
     model_config = SettingsConfigDict(

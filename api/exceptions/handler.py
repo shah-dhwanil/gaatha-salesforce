@@ -22,6 +22,7 @@ def get_status_code_from_error_type(error_type: ErrorTypes) -> int:
         ErrorTypes.ExternalServiceError: status.HTTP_500_INTERNAL_SERVER_ERROR,
         ErrorTypes.InternalError: status.HTTP_500_INTERNAL_SERVER_ERROR,
         ErrorTypes.UnkownError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+        ErrorTypes.UnauthorizedOperation: status.HTTP_403_FORBIDDEN,
     }
     return status_code_map.get(error_type, status.HTTP_500_INTERNAL_SERVER_ERROR)
 

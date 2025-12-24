@@ -5,15 +5,12 @@ This module defines the API endpoints for role operations including
 CRUD operations and role management.
 """
 
-from api.database import DatabasePool
-from typing import Annotated
 from uuid import UUID
 from fastapi import APIRouter, Depends, status
 import structlog
 
-from api.database import get_db_pool
-from api.repository.role import RoleRepository
 from api.service.role import RoleService
+from api.dependencies.role import get_role_service
 from api.models.base import ResponseModel, ListResponseModel
 from api.models.role import (
     CreateRoleRequest,
@@ -25,15 +22,6 @@ logger = structlog.get_logger(__name__)
 
 # Create router
 router = APIRouter(prefix="/roles", tags=["roles"])
-
-
-# Dependency to get role service
-async def get_role_service(
-    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
-) -> RoleService:
-    """Dependency to create and return RoleService instance."""
-    role_repository = RoleRepository(db)
-    return RoleService(role_repository)
 
 
 @router.post(

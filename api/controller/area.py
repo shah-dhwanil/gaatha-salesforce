@@ -5,14 +5,11 @@ This module defines the API endpoints for area operations including
 CRUD operations and area hierarchy management.
 """
 
-from typing import Annotated
 from uuid import UUID
 from fastapi import APIRouter, Depends, status, Query
 import structlog
-
-from api.database import DatabasePool, get_db_pool
-from api.repository.area import AreaRepository
 from api.service.area import AreaService
+from api.dependencies.area import get_area_service
 from api.models.base import ResponseModel, ListResponseModel
 from api.models.area import (
     CreateAreaRequest,
@@ -25,15 +22,6 @@ logger = structlog.get_logger(__name__)
 
 # Create router
 router = APIRouter(prefix="/areas", tags=["areas"])
-
-
-# Dependency to get area service
-async def get_area_service(
-    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
-) -> AreaService:
-    """Dependency to create and return AreaService instance."""
-    area_repository = AreaRepository(db)
-    return AreaService(area_repository)
 
 
 @router.post(
@@ -474,9 +462,7 @@ async def delete_area(
     Raises:
         HTTPException: 404 if area not found
     """
-    logger.info(
-        "Deleting area", area_id=area_id, company_id=str(company_id)
-    )
+    logger.info("Deleting area", area_id=area_id, company_id=str(company_id))
 
     await area_service.delete_area(company_id, area_id)
 

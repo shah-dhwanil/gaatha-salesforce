@@ -5,14 +5,12 @@ This module defines the API endpoints for company operations including
 CRUD operations and company management.
 """
 
-from typing import Annotated
 from uuid import UUID
 from fastapi import APIRouter, Depends, status
 import structlog
 
-from api.database import DatabasePool, get_db_pool
-from api.repository.company import CompanyRepository
 from api.service.company import CompanyService
+from api.dependencies.company import get_company_service
 from api.models.base import ResponseModel, ListResponseModel
 from api.models.company import (
     CreateCompanyRequest,
@@ -24,15 +22,6 @@ logger = structlog.get_logger(__name__)
 
 # Create router
 router = APIRouter(prefix="/companies", tags=["companies"])
-
-
-# Dependency to get company service
-async def get_company_service(
-    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
-) -> CompanyService:
-    """Dependency to create and return CompanyService instance."""
-    company_repository = CompanyRepository(db)
-    return CompanyService(company_repository)
 
 
 @router.post(

@@ -5,14 +5,12 @@ This module defines the API endpoints for user operations including
 CRUD operations and user management.
 """
 
-from typing import Annotated
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 import structlog
 
-from api.database import DatabasePool, get_db_pool
-from api.repository.user import UserRepository
 from api.service.user import UserService
+from api.dependencies.user import get_user_service
 from api.models.base import ResponseModel, ListResponseModel
 from api.models.users import (
     CreateUserRequest,
@@ -24,15 +22,6 @@ logger = structlog.get_logger(__name__)
 
 # Create router
 router = APIRouter(prefix="/users", tags=["users"])
-
-
-# Dependency to get user service
-async def get_user_service(
-    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
-) -> UserService:
-    """Dependency to create and return UserService instance."""
-    user_repository = UserRepository(db)
-    return UserService(user_repository)
 
 
 @router.post(
@@ -249,6 +238,7 @@ async def get_user_by_id(
             updated_at=user.updated_at,
         ),
     )
+
 
 @router.patch(
     "/{company_id}/{user_id}",

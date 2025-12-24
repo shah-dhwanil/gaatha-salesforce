@@ -6,6 +6,10 @@ acting as an intermediary between API handlers and the area repository.
 It handles validation, business rules, and coordinates repository operations.
 """
 
+from typing import Annotated
+from fastapi.params import Depends
+from api.database import get_db_pool
+from api.database import DatabasePool
 from uuid import UUID
 import structlog
 
@@ -471,3 +475,12 @@ class AreaService:
         logger.info(
             "Area deleted successfully", area_id=area_id, company_id=str(company_id)
         )
+
+
+# Dependency to get area service
+async def get_area_service(
+    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
+) -> AreaService:
+    """Dependency to create and return AreaService instance."""
+    area_repository = AreaRepository(db)
+    return AreaService(area_repository)

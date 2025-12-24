@@ -41,12 +41,8 @@ class CreateUserRequest(BaseModel):
     contact_no: str = Field(
         ..., min_length=1, max_length=20, description="Contact phone number"
     )
-    company_id: UUID = Field(
-        ..., description="UUID of the company the user belongs to"
-    )
-    role: str = Field(
-        ..., min_length=1, max_length=100, description="Role of the user"
-    )
+    company_id: UUID = Field(..., description="UUID of the company the user belongs to")
+    role: str = Field(..., min_length=1, max_length=100, description="Role of the user")
     area_id: Optional[int] = Field(None, description="Optional area assignment")
 
     @field_validator("username")

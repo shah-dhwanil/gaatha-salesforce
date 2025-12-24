@@ -7,6 +7,7 @@ class ErrorTypes(StrEnum):
     ResourceAlreadyExists = "RESOURCE_ALREADY_EXISTS"
     ResourceNotFound = "RESOURCE_NOT_FOUND"
     InvalidOperation = "INVALID_OPERATION"
+    UnauthorizedOperation = "UNAUTHORIZED_OPERATION"
     NotEnoughPermission = "NOT_ENOUGH_PERMISSION"
     ExternalServiceError = "EXTERNAL_SERVICE_ERROR"
     InternalError = "INTERNAL_ERROR"
@@ -37,3 +38,8 @@ class AppException(Exception):
 class UnkownAppException(AppException):
     def __init__(self, message: str = "An unknown error occurred", **kwargs) -> None:
         super().__init__(ErrorTypes.UnkownError, message, **kwargs)
+
+
+class UnauthorizedException(AppException):
+    def __init__(self, message: str = "Unauthorized access", **kwargs) -> None:
+        super().__init__(ErrorTypes.UnauthorizedOperation, message, **kwargs)
