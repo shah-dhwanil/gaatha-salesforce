@@ -6,7 +6,7 @@ from uuid import UUID
 class AuthenticatedUser(BaseModel):
     user_id: UUID
     area_id: Optional[int]
-    company_id: UUID
+    company_id: Optional[UUID]
     role: str
 
 

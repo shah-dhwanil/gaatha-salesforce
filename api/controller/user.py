@@ -5,6 +5,7 @@ This module defines the API endpoints for user operations including
 CRUD operations and user management.
 """
 
+from api.models.users import CreateSuperAdminRequest
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 import structlog
@@ -77,6 +78,60 @@ async def create_user(
             role=user.role,
             area_id=user.area_id,
             is_active=user.is_active,
+            is_super_admin=user.is_super_admin,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+        ),
+    )
+
+
+@router.post(
+    "/superadmin",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a super admin user",
+    description="Create a new super admin user with elevated privileges.",
+)
+async def create_super_admin_user(
+    request: CreateSuperAdminRequest,
+    user_service: UserService = Depends(get_user_service),
+) -> ResponseModel[UserResponse]:
+    """
+    Create a new super admin user.
+
+    Args:
+        request: CreateSuperAdminRequest with super admin details
+        user_service: Injected UserService dependency
+
+    Returns:
+        UserResponse with created super admin user details
+
+    Raises:
+        HTTPException: 409 if user already exists
+        HTTPException: 400 if validation fails
+    """
+    logger.info(
+        "Creating new super admin user",
+        username=request.username,
+    )
+
+    user = await user_service.create_super_admin(
+        username=request.username,
+        name=request.name,
+        contact_no=request.contact_no,
+    )
+
+    return ResponseModel(
+        status_code=status.HTTP_201_CREATED,
+        data=UserResponse(
+            id=user.id,
+            username=user.username,
+            name=user.name,
+            contact_no=user.contact_no,
+            company_id=user.company_id,
+            role=user.role,
+            area_id=user.area_id,
+            is_active=user.is_active,
+            is_super_admin=user.is_super_admin,
             created_at=user.created_at,
             updated_at=user.updated_at,
         ),
@@ -122,6 +177,7 @@ async def get_user_by_username(
             role=user.role,
             area_id=user.area_id,
             is_active=user.is_active,
+            is_super_admin=user.is_super_admin,
             created_at=user.created_at,
             updated_at=user.updated_at,
         ),
@@ -175,6 +231,7 @@ async def get_users(
             role=user.role,
             area_id=user.area_id,
             is_active=user.is_active,
+            is_super_admin=user.is_super_admin,
             created_at=user.created_at,
             updated_at=user.updated_at,
         )
@@ -234,6 +291,7 @@ async def get_user_by_id(
             role=user.role,
             area_id=user.area_id,
             is_active=user.is_active,
+            is_super_admin=user.is_super_admin,
             created_at=user.created_at,
             updated_at=user.updated_at,
         ),
@@ -299,10 +357,44 @@ async def update_user(
             role=user.role,
             area_id=user.area_id,
             is_active=user.is_active,
+            is_super_admin=user.is_super_admin,
             created_at=user.created_at,
             updated_at=user.updated_at,
         ),
     )
+
+
+@router.delete(
+    "/superadmin/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a super admin user",
+    description="Soft delete a super admin user by marking them as inactive.",
+)
+async def delete_super_admin_user(
+    user_id: UUID,
+    user_service: UserService = Depends(get_user_service),
+) -> None:
+    """
+    Delete a super admin user (soft delete).
+
+    Args:
+        user_id: UUID of the super admin user to delete
+        user_service: Injected UserService dependency
+
+    Returns:
+        None (204 No Content)
+
+    Raises:
+        HTTPException: 404 if user not found
+    """
+    logger.info(
+        "Deleting super admin user",
+        user_id=str(user_id),
+    )
+
+    await user_service.delete_super_admin(user_id)
+
+    return
 
 
 @router.delete(

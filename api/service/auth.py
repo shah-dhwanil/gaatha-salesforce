@@ -42,7 +42,7 @@ class AuthService:
     def create_access_token(
         self,
         user_id: UUID,
-        company_id: UUID,
+        company_id: Optional[UUID],
         role: str,
         area_id: Optional[int] = None,
     ) -> str:

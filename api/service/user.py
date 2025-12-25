@@ -12,7 +12,6 @@ import structlog
 
 from api.repository.user import UserRepository
 from api.models.users import UserInDB
-from api.exceptions.users import UserNotFoundException
 
 logger = structlog.get_logger(__name__)
 
@@ -285,79 +284,114 @@ class UserService:
 
         logger.info("User deleted successfully", user_id=str(user_id))
 
-    async def check_user_exists(self, username: str) -> bool:
-        """Check if a user exists by username.
-
-        Useful for validation before attempting operations.
-
-        Args:
-            username: Username to check
-
-        Returns:
-            bool: True if user exists, False otherwise
-        """
-        logger.debug("Checking if user exists", username=username)
-
-        try:
-            await self.user_repository.get_user_by_username(username)
-            logger.debug("User exists", username=username)
-            return True
-        except UserNotFoundException:
-            logger.debug("User does not exist", username=username)
-            return False
-
-    async def get_active_users_by_company(self, company_id: UUID) -> list[UserInDB]:
-        """Retrieve only active users in a company.
-
-        Filters out inactive/deleted users.
+    async def create_super_admin(
+        self,
+        username: str,
+        name: str,
+        contact_no: str,
+    ) -> UserInDB:
+        """Create a new super admin user.
 
         Args:
-            company_id: Company UUID
+            username: Unique username for the super admin
+            name: Full name of the super admin
+            contact_no: Contact phone number
 
         Returns:
-            list[UserInDB]: List of active users in the company
+            UserInDB: Created super admin user object with all details
         """
-        logger.info("Fetching active users for company", company_id=str(company_id))
-
-        all_users = await self.user_repository.get_users_by_company_id(company_id)
-        active_users = [user for user in all_users if user.is_active]
-
-        logger.info(
-            "Active users retrieved for company",
-            company_id=str(company_id),
-            active_user_count=len(active_users),
-            total_user_count=len(all_users),
+        logger.info("Creating super admin user", username=username)
+        return await self.user_repository.create_super_admin(
+            username=username.strip(),
+            name=name.strip(),
+            contact_no=contact_no.strip(),
         )
-        return active_users
 
-    async def get_active_users_by_role(
-        self, role: str, company_id: UUID
-    ) -> list[UserInDB]:
-        """Retrieve only active users by role within a company.
-
-        Filters out inactive/deleted users from the role query.
+    async def delete_super_admin(self, user_id: UUID) -> None:
+        """Delete a super admin user.
 
         Args:
-            role: Role name to filter by
-            company_id: Company UUID
+            user_id: User UUID of the super admin to delete
 
-        Returns:
-            list[UserInDB]: List of active users with the specified role
+        Raises:
+            UserNotFoundException: If super admin user not found
         """
-        logger.info(
-            "Fetching active users by role",
-            role=role,
-            company_id=str(company_id),
-        )
+        logger.info("Deleting super admin user", user_id=str(user_id))
+        await self.user_repository.delete_super_admin(user_id)
 
-        all_users = await self.user_repository.get_user_by_role(role, company_id)
-        active_users = [user for user in all_users if user.is_active]
+    # async def check_user_exists(self, username: str) -> bool:
+    #     """Check if a user exists by username.
 
-        logger.info(
-            "Active users retrieved by role",
-            role=role,
-            company_id=str(company_id),
-            active_user_count=len(active_users),
-            total_user_count=len(all_users),
-        )
-        return active_users
+    #     Useful for validation before attempting operations.
+
+    #     Args:
+    #         username: Username to check
+
+    #     Returns:
+    #         bool: True if user exists, False otherwise
+    #     """
+    #     logger.debug("Checking if user exists", username=username)
+
+    #     try:
+    #         await self.user_repository.get_user_by_username(username)
+    #         logger.debug("User exists", username=username)
+    #         return True
+    #     except UserNotFoundException:
+    #         logger.debug("User does not exist", username=username)
+    #         return False
+
+    # async def get_active_users_by_company(self, company_id: UUID) -> list[UserInDB]:
+    #     """Retrieve only active users in a company.
+
+    #     Filters out inactive/deleted users.
+
+    #     Args:
+    #         company_id: Company UUID
+
+    #     Returns:
+    #         list[UserInDB]: List of active users in the company
+    #     """
+    #     logger.info("Fetching active users for company", company_id=str(company_id))
+
+    #     all_users = await self.user_repository.get_users_by_company_id(company_id)
+    #     active_users = [user for user in all_users if user.is_active]
+
+    #     logger.info(
+    #         "Active users retrieved for company",
+    #         company_id=str(company_id),
+    #         active_user_count=len(active_users),
+    #         total_user_count=len(all_users),
+    #     )
+    #     return active_users
+
+    # async def get_active_users_by_role(
+    #     self, role: str, company_id: UUID
+    # ) -> list[UserInDB]:
+    #     """Retrieve only active users by role within a company.
+
+    #     Filters out inactive/deleted users from the role query.
+
+    #     Args:
+    #         role: Role name to filter by
+    #         company_id: Company UUID
+
+    #     Returns:
+    #         list[UserInDB]: List of active users with the specified role
+    #     """
+    #     logger.info(
+    #         "Fetching active users by role",
+    #         role=role,
+    #         company_id=str(company_id),
+    #     )
+
+    #     all_users = await self.user_repository.get_user_by_role(role, company_id)
+    #     active_users = [user for user in all_users if user.is_active]
+
+    #     logger.info(
+    #         "Active users retrieved by role",
+    #         role=role,
+    #         company_id=str(company_id),
+    #         active_user_count=len(active_users),
+    #         total_user_count=len(all_users),
+    #     )
+    #     return active_users

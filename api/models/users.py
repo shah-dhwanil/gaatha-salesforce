@@ -18,10 +18,13 @@ class UserInDB(BaseModel):
     username: str
     name: str
     contact_no: str
-    company_id: UUID
+    company_id: Optional[UUID]
     role: str
     area_id: Optional[int]
     is_active: bool
+    is_super_admin: bool = Field(
+        default=False, description="Indicates if the user is a super admin"
+    )
     created_at: datetime
     updated_at: datetime
 
@@ -128,6 +131,47 @@ class UpdateUserRequest(BaseModel):
         )
 
 
+class CreateSuperAdminRequest(BaseModel):
+    """Request model for creating a super admin user."""
+
+    username: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Unique username for the super admin",
+    )
+    name: str = Field(
+        ..., min_length=1, max_length=255, description="Full name of the super admin"
+    )
+    contact_no: str = Field(
+        ..., min_length=1, max_length=20, description="Contact phone number"
+    )
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        """Validate and clean username."""
+        if not v or not v.strip():
+            raise ValueError("Username cannot be empty or whitespace")
+        return v.strip()
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Validate and clean name."""
+        if not v or not v.strip():
+            raise ValueError("Name cannot be empty or whitespace")
+        return v.strip()
+
+    @field_validator("contact_no")
+    @classmethod
+    def validate_contact_no(cls, v: str) -> str:
+        """Validate and clean contact number."""
+        if not v or not v.strip():
+            raise ValueError("Contact number cannot be empty or whitespace")
+        return v.strip()
+
+
 # Response Models
 
 
@@ -138,9 +182,12 @@ class UserResponse(BaseModel):
     username: str
     name: str
     contact_no: str
-    company_id: UUID
+    company_id: Optional[UUID]
     role: str
     area_id: Optional[int]
     is_active: bool
+    is_super_admin: bool = Field(
+        default=False, description="Indicates if the user is a super admin"
+    )
     created_at: datetime
     updated_at: datetime

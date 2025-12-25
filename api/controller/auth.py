@@ -70,21 +70,27 @@ async def login(
         # For now, we'll skip OTP verification
         # if not verify_otp(user.id, request.otp_code):
         #     raise UnauthorizedException("Invalid OTP code")
-
-        # Create authenticated user
-        authenticated_user = AuthenticatedUser(
-            user_id=user.id,
-            area_id=user.area_id,
-            company_id=user.company_id,
-            role=user.role,
-        )
-
+        if user.is_super_admin:
+            authenticated_user = AuthenticatedUser(
+                user_id=user.id,
+                area_id=user.area_id,
+                company_id=None,
+                role="SUPER_ADMIN",
+            )
+        else:
+            # Create authenticated user
+            authenticated_user = AuthenticatedUser(
+                user_id=user.id,
+                area_id=user.area_id,
+                company_id=user.company_id,
+                role=user.role,
+            )
         # Generate access token
         access_token = auth_service.create_access_token(
-            user_id=user.id,
-            company_id=user.company_id,
-            role=user.role,
-            area_id=user.area_id,
+            user_id=authenticated_user.user_id,
+            company_id=authenticated_user.company_id,
+            role=authenticated_user.role,
+            area_id=authenticated_user.area_id,
         )
 
         logger.info("Login successful", user_id=str(user.id), username=request.username)

@@ -148,9 +148,84 @@ class UserRepository:
             company_id=rs1["company_id"],
             role=rs2["role"],
             area_id=rs2["area_id"],
+            is_super_admin=rs1["is_super_admin"],
             is_active=rs1["is_active"],
             created_at=rs2["created_at"],
             updated_at=rs2["updated_at"],
+        )
+
+    async def __create_super_admin(
+        self,
+        connection: Connection,
+        username: str,
+        name: str,
+        contact_no: str,
+    ) -> UserInDB:
+        """Create a new super admin user in the database.
+
+        Creates user record in:
+        1. salesforce.users table (basic user info)
+
+        Args:
+            connection: Database connection
+            username: Unique username for the super admin
+            name: Full name of the super admin
+            contact_no: Contact phone number
+
+        Returns:
+            UserInDB: Created super admin user object with all details
+        Raises:
+            UserAlreadyExistsError: If username already exists
+        """
+        uid = uuid7()
+        logger.debug(
+            "Creating new super admin user",
+            user_id=str(uid),
+            username=username,
+        )
+
+        query1 = """
+        INSERT INTO users (id, username, name, contact_no,is_super_admin) VALUES ($1, $2, $3, $4,TRUE)
+        RETURNING *;
+        """
+        try:
+            await set_search_path(connection, "salesforce")
+            rs1 = await connection.fetchrow(query1, uid, username, name, contact_no)
+            logger.debug(
+                "Super admin user record created in salesforce schema", user_id=str(uid)
+            )
+
+        except UniqueViolationError as e:
+            logger.error(
+                "Super admin user creation failed - username already exists",
+                username=username,
+                error=str(e),
+            )
+            raise UserAlreadyExistsException(
+                field="username", message="User with this username already exists."
+            ) from e
+
+        if not rs1:
+            logger.error(
+                "Super admin user creation failed - incomplete records",
+                username=username,
+            )
+            raise Exception("Failed to create super admin user record.")
+        logger.info(
+            "Super admin user created successfully", user_id=str(uid), username=username
+        )
+        return UserInDB(
+            id=rs1["id"],
+            username=rs1["username"],
+            name=rs1["name"],
+            contact_no=rs1["contact_no"],
+            company_id=None,
+            role="SUPER_ADMIN",
+            area_id=None,
+            is_super_admin=rs1["is_super_admin"],
+            is_active=rs1["is_active"],
+            created_at=rs1["created_at"],
+            updated_at=rs1["updated_at"],
         )
 
     async def __get_user_by_username(
@@ -173,7 +248,7 @@ class UserRepository:
         logger.debug("Fetching user by username", username=username)
 
         find_user_query = """
-        SELECT id, username, name, contact_no, company_id, is_active, created_at, updated_at
+        SELECT id, username, name, contact_no, company_id,is_super_admin, is_active, created_at, updated_at
         FROM users
         WHERE username = $1;
         """
@@ -186,6 +261,21 @@ class UserRepository:
         rs = await connection.fetchrow(find_user_query, username)
 
         if rs:
+            if rs["is_super_admin"]:
+                logger.debug("Super admin user found", username=username)
+                return UserInDB(
+                    id=rs["id"],
+                    username=rs["username"],
+                    name=rs["name"],
+                    contact_no=rs["contact_no"],
+                    company_id=None,
+                    role="SUPER_ADMIN",
+                    area_id=None,
+                    is_super_admin=rs["is_super_admin"],
+                    is_active=rs["is_active"],
+                    created_at=rs["created_at"],
+                    updated_at=rs["updated_at"],
+                )
             company_id = rs["company_id"]
             user_id = rs["id"]
             logger.debug(
@@ -212,6 +302,7 @@ class UserRepository:
                     company_id=rs["company_id"],
                     role=rs_company["role"],
                     area_id=rs_company["area_id"],
+                    is_super_admin=rs["is_super_admin"],
                     is_active=rs_company["is_active"],
                     created_at=rs_company["created_at"],
                     updated_at=rs_company["updated_at"],
@@ -248,7 +339,7 @@ class UserRepository:
         )
 
         find_user_query = """
-        SELECT id, username, name, contact_no, company_id, is_active, created_at, updated_at
+        SELECT id, username, name, contact_no, company_id,is_super_admin, is_active, created_at, updated_at
         FROM users
         WHERE id = $1;
         """
@@ -261,6 +352,21 @@ class UserRepository:
         rs = await connection.fetchrow(find_user_query, user_id)
 
         if rs:
+            if rs["is_super_admin"]:
+                logger.debug("Super admin user found", user_id=str(user_id))
+                return UserInDB(
+                    id=rs["id"],
+                    username=rs["username"],
+                    name=rs["name"],
+                    contact_no=rs["contact_no"],
+                    company_id=None,
+                    role="SUPER_ADMIN",
+                    area_id=None,
+                    is_super_admin=rs["is_super_admin"],
+                    is_active=rs["is_active"],
+                    created_at=rs["created_at"],
+                    updated_at=rs["updated_at"],
+                )
             logger.debug("User found in salesforce schema", user_id=str(user_id))
             await set_search_path(connection, get_schema_name(company_id))
             rs_company = await connection.fetchrow(find_user_in_company_query, user_id)
@@ -280,6 +386,7 @@ class UserRepository:
                     role=rs_company["role"],
                     area_id=rs_company["area_id"],
                     is_active=rs_company["is_active"],
+                    is_super_admin=rs["is_super_admin"],
                     created_at=rs_company["created_at"],
                     updated_at=rs_company["updated_at"],
                 )
@@ -308,7 +415,7 @@ class UserRepository:
         logger.debug("Fetching all users for company", company_id=str(company_id))
 
         find_users_query = """
-        SELECT u.id, u.username, u.name, u.contact_no, u.company_id, m.role, m.area_id, m.is_active, m.created_at, m.updated_at
+        SELECT u.id, u.username, u.name, u.contact_no, u.company_id,u.is_super_admin, m.role, m.area_id, m.is_active, m.created_at, m.updated_at
         FROM salesforce.users u
         JOIN members m ON u.id = m.id
         WHERE u.company_id = $1;
@@ -328,6 +435,7 @@ class UserRepository:
                     role=record["role"],
                     area_id=record["area_id"],
                     is_active=record["is_active"],
+                    is_super_admin=record["is_super_admin"],
                     created_at=record["created_at"],
                     updated_at=record["updated_at"],
                 )
@@ -360,7 +468,7 @@ class UserRepository:
         )
 
         find_users_query = """
-        SELECT u.id, u.username, u.name, u.contact_no, u.company_id, m.role, m.area_id, m.is_active, m.created_at, m.updated_at
+        SELECT u.id, u.username, u.name, u.contact_no, u.company_id,u.is_super_admin, m.role, m.area_id, m.is_active, m.created_at, m.updated_at
         FROM salesforce.users u
         JOIN members m ON u.id = m.id
         WHERE m.role = $1 AND u.company_id = $2;
@@ -379,6 +487,7 @@ class UserRepository:
                     company_id=record["company_id"],
                     role=record["role"],
                     area_id=record["area_id"],
+                    is_super_admin=record["is_super_admin"],
                     is_active=record["is_active"],
                     created_at=record["created_at"],
                     updated_at=record["updated_at"],
@@ -543,6 +652,21 @@ class UserRepository:
             rs2 = await connection.fetchrow(
                 "SELECT * FROM members WHERE id = $1", user_id
             )
+        if rs1 is not None and rs1["is_super_admin"]:
+            logger.debug("Super admin user updated", user_id=str(user_id))
+            return UserInDB(
+                id=rs1["id"],
+                username=rs1["username"],
+                name=rs1["name"],
+                contact_no=rs1["contact_no"],
+                company_id=None,
+                role="SUPER_ADMIN",
+                area_id=None,
+                is_active=rs1["is_active"],
+                is_super_admin=rs1["is_super_admin"],
+                created_at=rs1["created_at"],
+                updated_at=rs1["updated_at"],
+            )
         if rs1 is None or rs2 is None:
             logger.error(
                 "User update failed - user not found after update", user_id=str(user_id)
@@ -558,6 +682,7 @@ class UserRepository:
             role=rs2["role"],
             area_id=rs2["area_id"],
             is_active=rs1["is_active"],
+            is_super_admin=rs1["is_super_admin"],
             created_at=rs2["created_at"],
             updated_at=rs2["updated_at"],
         )
@@ -599,6 +724,29 @@ class UserRepository:
         logger.debug("Member marked inactive in company schema", user_id=str(user_id))
 
         logger.info("User soft deleted successfully", user_id=str(user_id))
+
+    async def __delete_super_admin(self, connection: Connection, user_id: UUID) -> None:
+        """Delete a super admin user from the database (soft delete).
+
+        Marks super admin user as inactive in salesforce.users table.
+
+        Args:
+            connection: Database connection
+            user_id: UUID of the super admin user to delete
+        """
+        logger.debug(
+            "Soft deleting super admin user",
+            user_id=str(user_id),
+        )
+
+        delete_user_query = """
+        UPDATE users
+        SET is_active = FALSE
+        WHERE id = $1 AND is_super_admin = TRUE;
+        """
+        await set_search_path(connection, "salesforce")
+        await connection.execute(delete_user_query, user_id)
+        logger.info("Super admin user soft deleted successfully", user_id=str(user_id))
 
     async def create_user(
         self,
@@ -795,3 +943,56 @@ class UserRepository:
             async with self.db_pool.transaction() as connection:
                 return await self.__delete_user(connection, user_id, company_id)
         return await self.__delete_user(connection, user_id, company_id)
+
+    async def create_super_admin(
+        self,
+        username: str,
+        name: str,
+        contact_no: str,
+        *,
+        connection: Optional[Connection] = None,
+    ) -> UserInDB:
+        """Create a new super admin user in the database.
+
+        Public interface for super admin user creation. Manages connection pooling if needed.
+
+        Args:
+            username: Unique username
+            name: Full name
+            contact_no: Contact phone number
+            connection: Optional existing connection (for transactions)
+        Returns:
+            UserInDB: Created super admin user object
+        """
+        logger.info("create_super_admin called", username=username)
+        if connection is None:
+            async with self.db_pool.transaction() as connection:
+                return await self.__create_super_admin(
+                    connection, username, name, contact_no
+                )
+        return await self.__create_super_admin(connection, username, name, contact_no)
+
+    async def delete_super_admin(
+        self,
+        user_id: UUID,
+        *,
+        connection: Optional[Connection] = None,
+    ) -> None:
+        """Delete a super admin user from the database (soft delete).
+
+        Marks super admin user as inactive in salesforce.users table.
+
+        Args:
+            user_id: UUID of the super admin user to delete
+            connection: Optional existing connection
+        """
+        logger.debug(
+            "Soft deleting super admin user",
+            user_id=str(user_id),
+        )
+
+        if connection is None:
+            async with self.db_pool.transaction() as connection:
+                await self.__delete_super_admin(connection, user_id)
+        else:
+            await self.__delete_super_admin(connection, user_id)
