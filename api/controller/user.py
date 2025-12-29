@@ -1,433 +1,589 @@
 """
-User controller for FastAPI routes.
+User controller/router for FastAPI endpoints.
 
-This module defines the API endpoints for user operations including
-CRUD operations and user management.
+This module defines all REST API endpoints for user management
+in a multi-tenant environment.
 """
 
-from api.models.users import CreateSuperAdminRequest
+from typing import Annotated
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query, status
+
+from fastapi import APIRouter, HTTPException, Path, Query, status
+from fastapi.responses import Response
 import structlog
 
-from api.service.user import UserService
-from api.dependencies.user import get_user_service
-from api.models.base import ResponseModel, ListResponseModel
-from api.models.users import (
-    CreateUserRequest,
-    UpdateUserRequest,
+from api.dependencies.user import UserServiceDep
+from api.dependencies.common import CompanyIDDep
+from api.exceptions.user import (
+    UserAlreadyExistsException,
+    UserNotFoundException,
+    UserOperationException,
+    UserValidationException,
+)
+from api.models import ListResponseModel, ResponseModel
+from api.models.user import (
+    UserCreate,
+    UserDetailsResponse,
+    UserListResponse,
     UserResponse,
+    UserUpdate,
 )
 
 logger = structlog.get_logger(__name__)
 
-# Create router
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(
+    prefix="/users",
+    tags=["Users"],
+    responses={
+        400: {"description": "Bad Request - Invalid input"},
+        404: {"description": "Resource Not Found"},
+        500: {"description": "Internal Server Error"},
+    },
+)
 
 
 @router.post(
-    "/",
+    "",
     response_model=ResponseModel[UserResponse],
     status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"description": "User created successfully"},
+        400: {"description": "Validation error"},
+        409: {"description": "User already exists"},
+    },
     summary="Create a new user",
-    description="Create a new user with the specified username, name, contact number, company, role, and optional area.",
+    description="Create a new user with specified username, name, contact, company, role, and area",
 )
 async def create_user(
-    request: CreateUserRequest,
-    user_service: UserService = Depends(get_user_service),
-) -> ResponseModel[UserResponse]:
+    user_data: UserCreate,
+    user_service: UserServiceDep,
+):
     """
     Create a new user.
 
-    Args:
-        request: CreateUserRequest with user details
-        user_service: Injected UserService dependency
-
-    Returns:
-        UserResponse with created user details
-
-    Raises:
-        HTTPException: 409 if user already exists
-        HTTPException: 404 if company, role, or area not found
-        HTTPException: 400 if validation fails
+    - **username**: Unique username (1-100 characters)
+    - **name**: Full name of the user (1-255 characters)
+    - **contact_no**: Contact phone number (1-20 characters)
+    - **company_id**: UUID of the company (optional for super admin)
+    - **role**: Role name (optional for super admin)
+    - **area_id**: Area ID (optional for super admin)
+    - **bank_details**: Bank account details (optional for super admin)
+    - **is_super_admin**: Whether the user is a super admin (default: false)
     """
-    logger.info(
-        "Creating new user",
-        username=request.username,
-        company_id=str(request.company_id),
-        role=request.role,
-    )
+    try:
+        user = await user_service.create_user(user_data)
+        return ResponseModel(status_code=status.HTTP_201_CREATED, data=user)
 
-    user = await user_service.create_user(
-        username=request.username,
-        name=request.name,
-        contact_no=request.contact_no,
-        company_id=request.company_id,
-        role=request.role,
-        area_id=request.area_id,
-    )
+    except UserAlreadyExistsException as e:
+        logger.warning(
+            "User already exists",
+            username=user_data.username,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=e.message,
+        )
 
-    return ResponseModel(
-        status_code=status.HTTP_201_CREATED,
-        data=UserResponse(
-            id=user.id,
-            username=user.username,
-            name=user.name,
-            contact_no=user.contact_no,
-            company_id=user.company_id,
-            role=user.role,
-            area_id=user.area_id,
-            is_active=user.is_active,
-            is_super_admin=user.is_super_admin,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        ),
-    )
+    except UserValidationException as e:
+        logger.warning(
+            "User validation failed",
+            username=user_data.username,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to create user",
+            username=user_data.username,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create user",
+        )
 
 
-@router.post(
-    "/superadmin",
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a super admin user",
-    description="Create a new super admin user with elevated privileges.",
+@router.get(
+    "/{user_id}",
+    response_model=ResponseModel[UserDetailsResponse],
+    responses={
+        200: {"description": "User retrieved successfully"},
+        404: {"description": "User not found"},
+    },
+    summary="Get user by ID",
+    description="Retrieve detailed information about a specific user including company and area details",
 )
-async def create_super_admin_user(
-    request: CreateSuperAdminRequest,
-    user_service: UserService = Depends(get_user_service),
-) -> ResponseModel[UserResponse]:
+async def get_user_by_id(
+    user_id: Annotated[UUID, Path(description="User UUID")],
+    user_service: UserServiceDep,
+):
     """
-    Create a new super admin user.
+    Get a user by ID.
 
-    Args:
-        request: CreateSuperAdminRequest with super admin details
-        user_service: Injected UserService dependency
-
-    Returns:
-        UserResponse with created super admin user details
-
-    Raises:
-        HTTPException: 409 if user already exists
-        HTTPException: 400 if validation fails
+    Returns complete user information including company name, area details, and timestamps.
     """
-    logger.info(
-        "Creating new super admin user",
-        username=request.username,
-    )
+    try:
+        user = await user_service.get_user_by_id(user_id)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=user)
 
-    user = await user_service.create_super_admin(
-        username=request.username,
-        name=request.name,
-        contact_no=request.contact_no,
-    )
+    except UserNotFoundException as e:
+        logger.info(
+            "User not found",
+            user_id=str(user_id),
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
 
-    return ResponseModel(
-        status_code=status.HTTP_201_CREATED,
-        data=UserResponse(
-            id=user.id,
-            username=user.username,
-            name=user.name,
-            contact_no=user.contact_no,
-            company_id=user.company_id,
-            role=user.role,
-            area_id=user.area_id,
-            is_active=user.is_active,
-            is_super_admin=user.is_super_admin,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        ),
-    )
+    except Exception as e:
+        logger.error(
+            "Failed to get user",
+            user_id=str(user_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve user",
+        )
 
 
 @router.get(
     "/username/{username}",
-    response_model=ResponseModel[UserResponse],
-    status_code=status.HTTP_200_OK,
+    response_model=ResponseModel[UserDetailsResponse],
+    responses={
+        200: {"description": "User retrieved successfully"},
+        404: {"description": "User not found"},
+    },
     summary="Get user by username",
-    description="Retrieve a specific user by their username.",
+    description="Retrieve user information by username",
 )
 async def get_user_by_username(
-    username: str,
-    user_service: UserService = Depends(get_user_service),
-) -> ResponseModel[UserResponse]:
+    username: Annotated[str, Path(description="Username of the user")],
+    user_service: UserServiceDep,
+):
     """
     Get a user by username.
 
-    Args:
-        username: Username of the user
-        user_service: Injected UserService dependency
-
-    Returns:
-        UserResponse with user details
-
-    Raises:
-        HTTPException: 404 if user not found
+    Returns complete user information for the user with the specified username.
     """
-    logger.info("Fetching user by username", username=username)
+    try:
+        user = await user_service.get_user_by_username(username)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=user)
 
-    user = await user_service.get_user_by_username(username)
-
-    return ResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=UserResponse(
-            id=user.id,
-            username=user.username,
-            name=user.name,
-            contact_no=user.contact_no,
-            company_id=user.company_id,
-            role=user.role,
-            area_id=user.area_id,
-            is_active=user.is_active,
-            is_super_admin=user.is_super_admin,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        ),
-    )
-
-
-@router.get(
-    "/{company_id}",
-    response_model=ListResponseModel[UserResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get users by company",
-    description="Retrieve all users in a company, optionally filtered by role or active status.",
-)
-async def get_users(
-    company_id: UUID,
-    role: str | None = Query(None, description="Filter by role"),
-    user_service: UserService = Depends(get_user_service),
-) -> ListResponseModel[UserResponse]:
-    """
-    Get users by company, optionally filtered by role and active status.
-
-    Args:
-        company_id: UUID of the company
-        role: Optional role filter
-        active_only: Whether to return only active users (default: True)
-        user_service: Injected UserService dependency
-
-    Returns:
-        ListResponseModel with list of users
-    """
-    logger.info(
-        "Fetching users",
-        company_id=str(company_id),
-        role=role,
-        active_only=True,
-    )
-
-    # Get users based on filters
-    if role:
-        users = await user_service.get_users_by_role(role, company_id)
-    else:
-        users = await user_service.get_users_by_company(company_id)
-
-    user_responses = [
-        UserResponse(
-            id=user.id,
-            username=user.username,
-            name=user.name,
-            contact_no=user.contact_no,
-            company_id=user.company_id,
-            role=user.role,
-            area_id=user.area_id,
-            is_active=user.is_active,
-            is_super_admin=user.is_super_admin,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
+    except UserNotFoundException as e:
+        logger.info(
+            "User not found by username",
+            username=username,
+            error=e.message,
         )
-        for user in users
-    ]
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
 
-    return ListResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=user_responses,
-        records_per_page=len(user_responses),
-        total_count=len(user_responses),
-    )
+    except Exception as e:
+        logger.error(
+            "Failed to get user by username",
+            username=username,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve user",
+        )
 
 
 @router.get(
-    "/{company_id}/{user_id}",
-    response_model=ResponseModel[UserResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get user by ID",
-    description="Retrieve a specific user by their UUID.",
+    "/companies/{company_id}/users",
+    response_model=ListResponseModel[UserListResponse],
+    responses={
+        200: {"description": "Users retrieved successfully"},
+        400: {"description": "Invalid pagination parameters"},
+    },
+    summary="List users by company",
+    description="List all users for a specific company with pagination and optional filtering by active status",
 )
-async def get_user_by_id(
-    user_id: UUID,
-    company_id: UUID,
-    user_service: UserService = Depends(get_user_service),
-) -> ResponseModel[UserResponse]:
+async def list_users_by_company(
+    company_id: CompanyIDDep,
+    user_service: UserServiceDep,
+    is_active: Annotated[
+        bool | None,
+        Query(description="Filter by active status (true/false, optional)"),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=100, description="Number of users to return (1-100)"),
+    ] = 20,
+    offset: Annotated[
+        int,
+        Query(ge=0, description="Number of users to skip (pagination)"),
+    ] = 0,
+):
     """
-    Get a user by ID.
+    List all users for a specific company with pagination.
 
-    Args:
-        user_id: UUID of the user
-        company_id: UUID of the company
-        user_service: Injected UserService dependency
+    Returns minimal user data for performance.
+    Use the detail endpoint to get complete user information.
 
-    Returns:
-        UserResponse with user details
-
-    Raises:
-        HTTPException: 404 if user not found
+    - **company_id**: Company UUID (from path)
+    - **is_active**: Optional filter by active status
+    - **limit**: Number of results to return (default: 20, max: 100)
+    - **offset**: Number of results to skip (default: 0)
     """
-    logger.info(
-        "Fetching user by ID",
-        user_id=str(user_id),
-        company_id=str(company_id),
-    )
+    try:
+        users, total_count = await user_service.get_users_by_company_id(
+            company_id=company_id,
+            is_active=is_active,
+            limit=limit,
+            offset=offset,
+        )
 
-    user = await user_service.get_user_by_id(user_id, company_id)
+        return ListResponseModel(
+            status_code=status.HTTP_200_OK,
+            data=users,
+            records_per_page=limit,
+            total_count=total_count,
+        )
 
-    return ResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=UserResponse(
-            id=user.id,
-            username=user.username,
-            name=user.name,
-            contact_no=user.contact_no,
-            company_id=user.company_id,
-            role=user.role,
-            area_id=user.area_id,
-            is_active=user.is_active,
-            is_super_admin=user.is_super_admin,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        ),
-    )
+    except UserValidationException as e:
+        logger.warning(
+            "Invalid pagination parameters",
+            limit=limit,
+            offset=offset,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to list users by company",
+            company_id=str(company_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list users",
+        )
+
+
+@router.get(
+    "/companies/{company_id}/roles/{role_name}/users",
+    response_model=ListResponseModel[UserListResponse],
+    responses={
+        200: {"description": "Users retrieved successfully"},
+        400: {"description": "Invalid pagination parameters"},
+    },
+    summary="List users by role",
+    description="List all users with a specific role with pagination and optional filtering by active status",
+)
+async def list_users_by_role(
+    company_id: CompanyIDDep,
+    role_name: Annotated[str, Path(description="Role name")],
+    user_service: UserServiceDep,
+    is_active: Annotated[
+        bool | None,
+        Query(description="Filter by active status (true/false, optional)"),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=100, description="Number of users to return (1-100)"),
+    ] = 20,
+    offset: Annotated[
+        int,
+        Query(ge=0, description="Number of users to skip (pagination)"),
+    ] = 0,
+):
+    """
+    List all users with a specific role with pagination.
+
+    Returns minimal user data for performance.
+    Use the detail endpoint to get complete user information.
+
+    - **role_name**: Role name (from path)
+    - **is_active**: Optional filter by active status
+    - **limit**: Number of results to return (default: 20, max: 100)
+    - **offset**: Number of results to skip (default: 0)
+    """
+    try:
+        users, total_count = await user_service.get_users_by_role(
+            company_id=company_id,
+            role=role_name,
+            is_active=is_active,
+            limit=limit,
+            offset=offset,
+        )
+
+        return ListResponseModel(
+            status_code=status.HTTP_200_OK,
+            data=users,
+            records_per_page=limit,
+            total_count=total_count,
+        )
+
+    except UserValidationException as e:
+        logger.warning(
+            "Invalid pagination parameters",
+            limit=limit,
+            offset=offset,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to list users by role",
+            role=role_name,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list users",
+        )
 
 
 @router.patch(
-    "/{company_id}/{user_id}",
+    "/companies/{company_id}/users/{user_id}",
     response_model=ResponseModel[UserResponse],
-    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"description": "User updated successfully"},
+        400: {"description": "Validation error"},
+        404: {"description": "User not found"},
+    },
     summary="Update a user",
-    description="Update an existing user's details (name, contact number, role, or area).",
+    description="Update user name, contact, role, area, or bank details",
 )
 async def update_user(
-    company_id: UUID,
-    user_id: UUID,
-    request: UpdateUserRequest,
-    user_service: UserService = Depends(get_user_service),
-) -> ResponseModel[UserResponse]:
+    company_id: CompanyIDDep,
+    user_id: Annotated[UUID, Path(description="User UUID")],
+    user_data: UserUpdate,
+    user_service: UserServiceDep,
+):
     """
-    Update a user.
+    Update an existing user.
 
-    Args:
-        user_id: UUID of the user to update
-        request: UpdateUserRequest with update details
-        company_id: UUID of the company
-        user_service: Injected UserService dependency
+    Only specified fields will be updated.
+    Username and super admin status cannot be updated.
 
-    Returns:
-        UserResponse with updated user details
-
-    Raises:
-        HTTPException: 404 if user not found
-        HTTPException: 400 if no fields provided for update or validation fails
+    - **name**: Optional new name
+    - **contact_no**: Optional new contact number
+    - **role**: Optional new role
+    - **area_id**: Optional new area assignment
+    - **bank_details**: Optional new bank details
     """
-    logger.info(
-        "Updating user",
-        user_id=str(user_id),
-        company_id=str(company_id),
-    )
+    try:
+        user = await user_service.update_user(user_id, user_data, company_id)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=user)
 
-    # Validate at least one field is provided
-    if not request.has_updates():
-        user = await user_service.get_user_by_id(user_id, company_id)
-    else:
-        user = await user_service.update_user(
-            user_id=user_id,
-            company_id=company_id,
-            name=request.name,
-            contact_no=request.contact_no,
-            role=request.role,
-            area_id=request.area_id,
+    except UserNotFoundException as e:
+        logger.info(
+            "User not found for update",
+            user_id=str(user_id),
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
         )
 
-    return ResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=UserResponse(
-            id=user.id,
-            username=user.username,
-            name=user.name,
-            contact_no=user.contact_no,
-            company_id=user.company_id,
-            role=user.role,
-            area_id=user.area_id,
-            is_active=user.is_active,
-            is_super_admin=user.is_super_admin,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        ),
-    )
+    except UserValidationException as e:
+        logger.warning(
+            "User update validation failed",
+            user_id=str(user_id),
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to update user",
+            user_id=str(user_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update user",
+        )
 
 
 @router.delete(
-    "/superadmin/{user_id}",
+    "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a super admin user",
-    description="Soft delete a super admin user by marking them as inactive.",
-)
-async def delete_super_admin_user(
-    user_id: UUID,
-    user_service: UserService = Depends(get_user_service),
-) -> None:
-    """
-    Delete a super admin user (soft delete).
-
-    Args:
-        user_id: UUID of the super admin user to delete
-        user_service: Injected UserService dependency
-
-    Returns:
-        None (204 No Content)
-
-    Raises:
-        HTTPException: 404 if user not found
-    """
-    logger.info(
-        "Deleting super admin user",
-        user_id=str(user_id),
-    )
-
-    await user_service.delete_super_admin(user_id)
-
-    return
-
-
-@router.delete(
-    "/{company_id}/{user_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a user",
-    description="Soft delete a user by marking them as inactive.",
+    responses={
+        204: {"description": "User deactivated successfully"},
+        404: {"description": "User not found"},
+    },
+    summary="Delete a user (soft delete)",
+    description="Soft delete a user by setting is_active to false",
 )
 async def delete_user(
-    company_id: UUID,
-    user_id: UUID,
-    user_service: UserService = Depends(get_user_service),
-) -> None:
+    user_id: Annotated[UUID, Path(description="User UUID")],
+    user_service: UserServiceDep,
+):
     """
     Delete a user (soft delete).
 
-    Args:
-        user_id: UUID of the user to delete
-        company_id: UUID of the company
-        user_service: Injected UserService dependency
-
-    Returns:
-        None (204 No Content)
-
-    Raises:
-        HTTPException: 404 if user not found
+    Sets is_active to false instead of permanently deleting the user.
+    The user will still exist in the database but won't be active.
     """
-    logger.info(
-        "Deleting user",
-        user_id=str(user_id),
-        company_id=str(company_id),
-    )
+    try:
+        await user_service.delete_user(user_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    await user_service.delete_user(user_id, company_id)
+    except UserNotFoundException as e:
+        logger.info(
+            "User not found for deletion",
+            user_id=str(user_id),
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
 
-    return
+    except Exception as e:
+        logger.error(
+            "Failed to delete user",
+            user_id=str(user_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user",
+        )
+
+
+@router.post(
+    "/{user_id}/activate",
+    response_model=ResponseModel[UserResponse],
+    responses={
+        200: {"description": "User activated successfully"},
+        404: {"description": "User not found"},
+    },
+    summary="Activate a user",
+    description="Activate a user by setting is_active to true",
+)
+async def activate_user(
+    user_id: Annotated[UUID, Path(description="User UUID")],
+    user_service: UserServiceDep,
+):
+    """
+    Activate a user.
+
+    Sets is_active to true for a previously deactivated user.
+    """
+    try:
+        user = await user_service.activate_user(user_id)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=user)
+
+    except UserNotFoundException as e:
+        logger.info(
+            "User not found for activation",
+            user_id=str(user_id),
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to activate user",
+            user_id=str(user_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to activate user",
+        )
+
+
+@router.get(
+    "/{user_id}/exists",
+    response_model=ResponseModel[dict],
+    responses={
+        200: {"description": "Existence check completed"},
+    },
+    summary="Check if user exists",
+    description="Check if a user with the given ID exists",
+)
+async def check_user_exists(
+    user_id: Annotated[UUID, Path(description="User UUID")],
+    user_service: UserServiceDep,
+):
+    """
+    Check if a user exists.
+
+    Returns a boolean indicating whether the user exists.
+    """
+    try:
+        exists = await user_service.check_user_exists(user_id)
+        return ResponseModel(
+            status_code=status.HTTP_200_OK,
+            data={"user_id": str(user_id), "exists": exists},
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to check user existence",
+            user_id=str(user_id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check user existence",
+        )
+
+
+@router.get(
+    "/username/{username}/exists",
+    response_model=ResponseModel[dict],
+    responses={
+        200: {"description": "Existence check completed"},
+    },
+    summary="Check if username exists",
+    description="Check if a user with the given username exists",
+)
+async def check_username_exists(
+    username: Annotated[str, Path(description="Username to check")],
+    user_service: UserServiceDep,
+):
+    """
+    Check if a username exists.
+
+    Returns a boolean indicating whether the username is already taken.
+    """
+    try:
+        exists = await user_service.check_username_exists(username)
+        return ResponseModel(
+            status_code=status.HTTP_200_OK,
+            data={"username": username, "exists": exists},
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to check username existence",
+            username=username,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check username existence",
+        )
+

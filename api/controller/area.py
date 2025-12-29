@@ -1,469 +1,741 @@
 """
-Area controller for FastAPI routes.
+Area controller/router for FastAPI endpoints.
 
-This module defines the API endpoints for area operations including
-CRUD operations and area hierarchy management.
+This module defines all REST API endpoints for hierarchical area management
+(NATION, ZONE, REGION, AREA, DIVISION) in a multi-tenant environment.
 """
 
-from uuid import UUID
-from fastapi import APIRouter, Depends, status, Query
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Path, Query, status
+from fastapi.responses import Response
 import structlog
-from api.service.area import AreaService
-from api.dependencies.area import get_area_service
-from api.models.base import ResponseModel, ListResponseModel
-from api.models.area import (
-    CreateAreaRequest,
-    UpdateAreaRequest,
-    AreaResponse,
-    AreaType,
+
+from api.dependencies.area import AreaServiceDep
+from api.exceptions.area import (
+    AreaAlreadyExistsException,
+    AreaInvalidHierarchyException,
+    AreaNotFoundException,
+    AreaOperationException,
 )
+from api.models import ListResponseModel, ResponseModel
+from api.models.area import AreaCreate, AreaListItem, AreaResponse, AreaUpdate
 
 logger = structlog.get_logger(__name__)
 
-# Create router
-router = APIRouter(prefix="/areas", tags=["areas"])
+router = APIRouter(
+    prefix="/companies/{company_id}/areas",
+    tags=["Areas"],
+    responses={
+        400: {"description": "Bad Request - Invalid input or hierarchy"},
+        404: {"description": "Resource Not Found"},
+        500: {"description": "Internal Server Error"},
+    },
+)
 
 
 @router.post(
-    "/",
+    "",
     response_model=ResponseModel[AreaResponse],
     status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"description": "Area created successfully"},
+        400: {"description": "Validation or hierarchy error"},
+        404: {"description": "Parent area not found"},
+        409: {"description": "Area already exists (duplicate name+type)"},
+    },
     summary="Create a new area",
-    description="Create a new area with the specified name, type, and parent hierarchy for a company.",
+    description="Create a new area in the hierarchy with automatic parent validation and hierarchy setup",
 )
 async def create_area(
-    request: CreateAreaRequest,
-    area_service: AreaService = Depends(get_area_service),
-) -> ResponseModel[AreaResponse]:
+    area_data: AreaCreate,
+    area_service: AreaServiceDep,
+):
     """
-    Create a new area.
+    Create a new area in the hierarchy.
 
-    Args:
-        request: CreateAreaRequest with area details
-        area_service: Injected AreaService dependency
+    The service automatically:
+    - Validates parent area exists and is of correct type
+    - Populates all ancestor IDs (nation_id, zone_id, region_id, area_id) based on parent
+    - Enforces hierarchy rules (NATION > ZONE > REGION > AREA > DIVISION)
 
-    Returns:
-        AreaResponse with created area details
+    **Hierarchy Rules:**
+    - **NATION**: Top level, no parent required
+    - **ZONE**: Requires nation_id only
+    - **REGION**: Requires zone_id only (nation_id auto-populated)
+    - **AREA**: Requires region_id only (zone_id, nation_id auto-populated)
+    - **DIVISION**: Requires area_id only (all ancestors auto-populated)
 
-    Raises:
-        HTTPException: 409 if area already exists
-        HTTPException: 400 if validation fails
+    **Request Body:**
+    - **name**: Area name (1-64 characters)
+    - **type**: NATION, ZONE, REGION, AREA, or DIVISION
+    - **nation_id**: Parent nation ID (required for ZONE)
+    - **zone_id**: Parent zone ID (required for REGION)
+    - **region_id**: Parent region ID (required for AREA)
+    - **area_id**: Parent area ID (required for DIVISION)
     """
-    logger.info(
-        "Creating new area",
-        name=request.name,
-        type=request.type,
-        company_id=str(request.company_id),
-    )
+    try:
+        area = await area_service.create_area(area_data)
+        return ResponseModel(status_code=status.HTTP_201_CREATED, data=area)
 
-    area = await area_service.create_area(
-        company_id=request.company_id,
-        name=request.name,
-        type=request.type,
-        area_id=request.area_id,
-        region_id=request.region_id,
-        zone_id=request.zone_id,
-        nation_id=request.nation_id,
-    )
-
-    return ResponseModel(
-        status_code=status.HTTP_201_CREATED,
-        data=AreaResponse(
-            id=area.id,
-            name=area.name,
-            type=area.type,
-            area_id=area.area_id,
-            region_id=area.region_id,
-            zone_id=area.zone_id,
-            nation_id=area.nation_id,
-            is_active=area.is_active,
-            created_at=area.created_at,
-            updated_at=area.updated_at,
-        ),
-    )
-
-
-@router.get(
-    "/{company_id}",
-    response_model=ListResponseModel[AreaResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get all areas for a company",
-    description="Retrieve all active areas for the specified company with pagination.",
-)
-async def get_areas_by_company(
-    company_id: UUID,
-    limit: int = Query(
-        10, ge=1, le=100, description="Maximum number of records to return"
-    ),
-    offset: int = Query(0, ge=0, description="Number of records to skip"),
-    area_service: AreaService = Depends(get_area_service),
-) -> ListResponseModel[AreaResponse]:
-    """
-    Get all areas for a company with pagination.
-
-    Args:
-        company_id: UUID of the company
-        limit: Maximum number of records to return (default: 10)
-        offset: Number of records to skip (default: 0)
-        area_service: Injected AreaService dependency
-
-    Returns:
-        ListResponseModel with list of areas, pagination info, and total count
-    """
-    logger.info(
-        "Fetching areas for company",
-        company_id=str(company_id),
-        limit=limit,
-        offset=offset,
-    )
-
-    areas, total_count = await area_service.get_areas_by_company_id(
-        company_id, limit, offset
-    )
-
-    area_responses = [
-        AreaResponse(
-            id=area.id,
-            name=area.name,
-            type=area.type,
-            area_id=area.area_id,
-            region_id=area.region_id,
-            zone_id=area.zone_id,
-            nation_id=area.nation_id,
-            is_active=area.is_active,
-            created_at=area.created_at,
-            updated_at=area.updated_at,
+    except AreaAlreadyExistsException as e:
+        logger.warning(
+            "Area already exists",
+            area_name=area_data.name,
+            area_type=area_data.type,
+            error=e.message,
         )
-        for area in areas
-    ]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=e.message,
+        )
 
-    return ListResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=area_responses,
-        records_per_page=len(area_responses),
-        total_count=total_count,
-    )
+    except AreaNotFoundException as e:
+        logger.warning(
+            "Parent area not found",
+            area_name=area_data.name,
+            area_type=area_data.type,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
+
+    except AreaInvalidHierarchyException as e:
+        logger.warning(
+            "Invalid area hierarchy",
+            area_name=area_data.name,
+            area_type=area_data.type,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to create area",
+            area_name=area_data.name,
+            area_type=area_data.type,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create area",
+        )
 
 
 @router.get(
-    "/{company_id}/id/{area_id}",
+    "/{area_id}",
     response_model=ResponseModel[AreaResponse],
-    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"description": "Area retrieved successfully"},
+        404: {"description": "Area not found"},
+    },
     summary="Get area by ID",
-    description="Retrieve a specific area by ID for a company.",
+    description="Retrieve detailed information about a specific area including all parent references",
 )
-async def get_area_by_id(
-    company_id: UUID,
-    area_id: int,
-    area_service: AreaService = Depends(get_area_service),
-) -> ResponseModel[AreaResponse]:
+async def get_area(
+    area_id: Annotated[int, Path(description="Area ID", ge=1)],
+    area_service: AreaServiceDep,
+):
     """
     Get an area by ID.
 
-    Args:
-        company_id: UUID of the company
-        area_id: ID of the area
-        area_service: Injected AreaService dependency
-
-    Returns:
-        AreaResponse with area details
-
-    Raises:
-        HTTPException: 404 if area not found
+    Returns complete area information including:
+    - All fields (id, name, type, parent IDs)
+    - Timestamps (created_at, updated_at)
+    - Active status
     """
-    logger.info("Fetching area by ID", area_id=area_id, company_id=str(company_id))
+    try:
+        area = await area_service.get_area_by_id(area_id)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=area)
 
-    area = await area_service.get_area_by_id(company_id, area_id)
+    except AreaNotFoundException as e:
+        logger.info(
+            "Area not found",
+            area_id=area_id,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
 
-    return ResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=AreaResponse(
-            id=area.id,
-            name=area.name,
-            type=area.type,
-            area_id=area.area_id,
-            region_id=area.region_id,
-            zone_id=area.zone_id,
-            nation_id=area.nation_id,
-            is_active=area.is_active,
-            created_at=area.created_at,
-            updated_at=area.updated_at,
-        ),
-    )
+    except Exception as e:
+        logger.error(
+            "Failed to get area",
+            area_id=area_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve area",
+        )
 
 
 @router.get(
-    "/{company_id}/name/{name}",
+    "/by-name/{area_type}/{name}",
     response_model=ResponseModel[AreaResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get area by name",
-    description="Retrieve a specific area by name for a company.",
+    responses={
+        200: {"description": "Area retrieved successfully"},
+        404: {"description": "Area not found"},
+    },
+    summary="Get area by name and type",
+    description="Retrieve an area by its name and type combination",
 )
-async def get_area_by_name(
-    company_id: UUID,
-    name: str,
-    area_service: AreaService = Depends(get_area_service),
-) -> ResponseModel[AreaResponse]:
+async def get_area_by_name_and_type(
+    name: Annotated[str, Path(description="Area name")],
+    area_type: Annotated[str, Path(description="Area type: NATION, ZONE, REGION, AREA, or DIVISION")],
+    area_service: AreaServiceDep,
+):
     """
-    Get an area by name.
+    Get an area by name and type.
 
-    Args:
-        company_id: UUID of the company
-        name: Name of the area
-        area_service: Injected AreaService dependency
-
-    Returns:
-        AreaResponse with area details
-
-    Raises:
-        HTTPException: 404 if area not found
+    Since area names must be unique within a type, this combination uniquely identifies an area.
     """
-    logger.info("Fetching area by name", name=name, company_id=str(company_id))
+    try:
+        area = await area_service.get_area_by_name_and_type(name, area_type)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=area)
 
-    area = await area_service.get_area_by_name(company_id, name)
+    except AreaNotFoundException as e:
+        logger.info(
+            "Area not found",
+            area_name=name,
+            area_type=area_type,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
 
-    return ResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=AreaResponse(
-            id=area.id,
-            name=area.name,
-            type=area.type,
-            area_id=area.area_id,
-            region_id=area.region_id,
-            zone_id=area.zone_id,
-            nation_id=area.nation_id,
-            is_active=area.is_active,
-            created_at=area.created_at,
-            updated_at=area.updated_at,
-        ),
-    )
+    except Exception as e:
+        logger.error(
+            "Failed to get area by name and type",
+            area_name=name,
+            area_type=area_type,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve area",
+        )
 
 
 @router.get(
-    "/{company_id}/type/{area_type}",
-    response_model=ListResponseModel[AreaResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get areas by type",
-    description="Retrieve all areas of a specific type for a company with pagination.",
+    "",
+    response_model=ListResponseModel[AreaListItem],
+    responses={
+        200: {"description": "Areas retrieved successfully"},
+        400: {"description": "Invalid parameters or hierarchy"},
+    },
+    summary="List all areas",
+    description="List areas with pagination and optional filtering by type, parent, and active status",
 )
-async def get_areas_by_type(
-    company_id: UUID,
-    area_type: AreaType,
-    limit: int = Query(
-        10, ge=1, le=100, description="Maximum number of records to return"
-    ),
-    offset: int = Query(0, ge=0, description="Number of records to skip"),
-    area_service: AreaService = Depends(get_area_service),
-) -> ListResponseModel[AreaResponse]:
+async def list_areas(
+    area_service: AreaServiceDep,
+    area_type: Annotated[
+        str | None,
+        Query(description="Filter by area type: NATION, ZONE, REGION, AREA, or DIVISION"),
+    ] = None,
+    is_active: Annotated[
+        bool | None,
+        Query(description="Filter by active status (true/false, optional)"),
+    ] = None,
+    parent_id: Annotated[
+        int | None,
+        Query(description="Filter by parent area ID", ge=1),
+    ] = None,
+    parent_type: Annotated[
+        str | None,
+        Query(description="Parent type: nation, zone, region, or area (required if parent_id is provided)"),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=100, description="Number of areas to return (1-100)"),
+    ] = 20,
+    offset: Annotated[
+        int,
+        Query(ge=0, description="Number of areas to skip (pagination)"),
+    ] = 0,
+):
     """
-    Get all areas of a specific type for a company with pagination.
+    List all areas with pagination and filtering.
 
-    Args:
-        company_id: UUID of the company
-        area_type: Type of areas to retrieve
-        limit: Maximum number of records to return (default: 10)
-        offset: Number of records to skip (default: 0)
-        area_service: Injected AreaService dependency
+    Returns minimal area data (id, name, type, is_active) for performance.
+    Use the detail endpoint (GET /{area_id}) to get complete area information.
 
-    Returns:
-        ListResponseModel with list of areas, pagination info, and total count
+    **Filters:**
+    - **area_type**: Filter by specific hierarchy level
+    - **is_active**: Filter by active status
+    - **parent_id + parent_type**: Get all children of a specific parent
+      - Example: parent_id=5, parent_type="nation" returns all zones under nation 5
+    - **limit**: Results per page (default: 20, max: 100)
+    - **offset**: Skip results for pagination (default: 0)
+
+    **Examples:**
+    - List all nations: `?area_type=NATION`
+    - List zones under nation 1: `?parent_id=1&parent_type=nation`
+    - List active divisions: `?area_type=DIVISION&is_active=true`
     """
-    logger.info(
-        "Fetching areas by type",
-        company_id=str(company_id),
-        area_type=area_type,
-        limit=limit,
-        offset=offset,
-    )
-
-    areas, total_count = await area_service.get_areas_by_type(
-        company_id, area_type, limit, offset
-    )
-
-    area_responses = [
-        AreaResponse(
-            id=area.id,
-            name=area.name,
-            type=area.type,
-            area_id=area.area_id,
-            region_id=area.region_id,
-            zone_id=area.zone_id,
-            nation_id=area.nation_id,
-            is_active=area.is_active,
-            created_at=area.created_at,
-            updated_at=area.updated_at,
+    try:
+        areas, total_count = await area_service.list_areas(
+            area_type=area_type,
+            is_active=is_active,
+            parent_id=parent_id,
+            parent_type=parent_type,
+            limit=limit,
+            offset=offset,
         )
-        for area in areas
-    ]
 
-    return ListResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=area_responses,
-        records_per_page=len(area_responses),
-        total_count=total_count,
-    )
-
-
-@router.get(
-    "/{company_id}/related/{area_id}",
-    response_model=ListResponseModel[AreaResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get areas related to a specific area",
-    description="Retrieve areas related to a given area based on hierarchy with optional type filtering.",
-)
-async def get_areas_related_to(
-    company_id: UUID,
-    area_id: int,
-    area_type: AreaType = Query(..., description="Type of the reference area"),
-    required_type: AreaType | None = Query(
-        None, description="Type to filter related areas"
-    ),
-    limit: int = Query(
-        10, ge=1, le=100, description="Maximum number of records to return"
-    ),
-    offset: int = Query(0, ge=0, description="Number of records to skip"),
-    area_service: AreaService = Depends(get_area_service),
-) -> ListResponseModel[AreaResponse]:
-    """
-    Get areas related to a specific area based on hierarchy.
-
-    Args:
-        company_id: UUID of the company
-        area_id: ID of the reference area
-        area_type: Type of the reference area
-        required_type: Optional type to filter related areas
-        limit: Maximum number of records to return (default: 10)
-        offset: Number of records to skip (default: 0)
-        area_service: Injected AreaService dependency
-
-    Returns:
-        ListResponseModel with list of related areas, pagination info, and total count
-    """
-    logger.info(
-        "Fetching areas related to area",
-        company_id=str(company_id),
-        area_id=area_id,
-        area_type=area_type,
-        required_type=required_type,
-        limit=limit,
-        offset=offset,
-    )
-
-    areas, total_count = await area_service.get_areas_related_to(
-        company_id, area_id, area_type, required_type, limit, offset
-    )
-
-    area_responses = [
-        AreaResponse(
-            id=area.id,
-            name=area.name,
-            type=area.type,
-            area_id=area.area_id,
-            region_id=area.region_id,
-            zone_id=area.zone_id,
-            nation_id=area.nation_id,
-            is_active=area.is_active,
-            created_at=area.created_at,
-            updated_at=area.updated_at,
+        return ListResponseModel(
+            status_code=status.HTTP_200_OK,
+            data=areas,
+            records_per_page=limit,
+            total_count=total_count,
         )
-        for area in areas
-    ]
 
-    return ListResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=area_responses,
-        records_per_page=len(area_responses),
-        total_count=total_count,
-    )
+    except AreaInvalidHierarchyException as e:
+        logger.warning(
+            "Invalid parameters for list areas",
+            area_type=area_type,
+            parent_id=parent_id,
+            parent_type=parent_type,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to list areas",
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list areas",
+        )
 
 
 @router.patch(
-    "/{company_id}/{area_id}",
+    "/{area_id}",
     response_model=ResponseModel[AreaResponse],
-    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"description": "Area updated successfully"},
+        400: {"description": "Validation or hierarchy error"},
+        404: {"description": "Area or parent not found"},
+    },
     summary="Update an area",
-    description="Update an existing area's details.",
+    description="Update area details with automatic parent validation and hierarchy setup",
 )
 async def update_area(
-    company_id: UUID,
-    area_id: int,
-    request: UpdateAreaRequest,
-    area_service: AreaService = Depends(get_area_service),
-) -> ResponseModel[AreaResponse]:
+    area_id: Annotated[int, Path(description="Area ID", ge=1)],
+    area_data: AreaUpdate,
+    area_service: AreaServiceDep,
+):
     """
-    Update an area.
+    Update an existing area.
 
-    Args:
-        request: UpdateAreaRequest with update details
-        area_service: Injected AreaService dependency
+    The service automatically validates hierarchy when updating type or parent references.
 
-    Returns:
-        AreaResponse with updated area details
+    **Updatable Fields:**
+    - **name**: Area name
+    - **type**: Area type (triggers hierarchy re-validation)
+    - **parent IDs**: Parent references (auto-populates ancestors based on hierarchy)
 
-    Raises:
-        HTTPException: 404 if area not found
-        HTTPException: 400 if no fields provided for update
+    **Note**: At least one field must be provided for update.
     """
-    logger.info("Updating area", area_id=area_id, company_id=str(company_id))
+    try:
+        area = await area_service.update_area(area_id, area_data)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=area)
 
-    # Validate at least one field is provided
-    if not request.has_updates():
-        area = await area_service.get_area_by_id(company_id, area_id)
-    else:
-        area = await area_service.update_area(
-            company_id=company_id,
-            id=area_id,
-            name=request.name,
-            type=request.type,
-            area_id=request.area_id,
-            region_id=request.region_id,
-            zone_id=request.zone_id,
-            nation_id=request.nation_id,
+    except AreaNotFoundException as e:
+        logger.info(
+            "Area not found for update",
+            area_id=area_id,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
         )
 
-    return ResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=AreaResponse(
-            id=area.id,
-            name=area.name,
-            type=area.type,
-            area_id=area.area_id,
-            region_id=area.region_id,
-            zone_id=area.zone_id,
-            nation_id=area.nation_id,
-            is_active=area.is_active,
-            created_at=area.created_at,
-            updated_at=area.updated_at,
-        ),
-    )
+    except AreaInvalidHierarchyException as e:
+        logger.warning(
+            "Area update validation failed",
+            area_id=area_id,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to update area",
+            area_id=area_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update area",
+        )
 
 
 @router.delete(
-    "/{company_id}/{area_id}",
+    "/{area_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete an area",
-    description="Soft delete an area by marking it as inactive.",
+    responses={
+        204: {"description": "Area deactivated successfully"},
+        404: {"description": "Area not found"},
+    },
+    summary="Delete an area (soft delete)",
+    description="Soft delete an area by setting is_active to false",
 )
 async def delete_area(
-    company_id: UUID,
-    area_id: int,
-    area_service: AreaService = Depends(get_area_service),
-) -> None:
+    area_id: Annotated[int, Path(description="Area ID", ge=1)],
+    area_service: AreaServiceDep,
+):
     """
     Delete an area (soft delete).
 
-    Args:
-        request: DeleteAreaRequest with area identifier
-        area_service: Injected AreaService dependency
-
-    Returns:
-        None
-
-    Raises:
-        HTTPException: 404 if area not found
+    Sets is_active to false instead of permanently deleting the area.
+    The area will still exist in the database but won't be active.
     """
-    logger.info("Deleting area", area_id=area_id, company_id=str(company_id))
+    try:
+        await area_service.delete_area(area_id)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    await area_service.delete_area(company_id, area_id)
+    except AreaNotFoundException as e:
+        logger.info(
+            "Area not found for deletion",
+            area_id=area_id,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
 
-    return
+    except Exception as e:
+        logger.error(
+            "Failed to delete area",
+            area_id=area_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete area",
+        )
+
+
+@router.get(
+    "/parent/{parent_id}/children",
+    response_model=ResponseModel[list[AreaResponse]],
+    responses={
+        200: {"description": "Child areas retrieved successfully"},
+        400: {"description": "Invalid parent type"},
+    },
+    summary="Get child areas of a parent",
+    description="Get all immediate child areas of a specific parent area",
+)
+async def get_areas_by_parent(
+    parent_id: Annotated[int, Path(description="Parent area ID", ge=1)],
+    parent_type: Annotated[str, Query(description="Parent type: nation, zone, region, or area")],
+    area_service: AreaServiceDep,
+):
+    """
+    Get all child areas of a parent.
+
+    Returns full area information for all immediate children.
+
+    **Parent Types:**
+    - **nation**: Returns all zones under the nation
+    - **zone**: Returns all regions under the zone
+    - **region**: Returns all areas under the region
+    - **area**: Returns all divisions under the area
+    """
+    try:
+        areas = await area_service.get_areas_by_parent(parent_id, parent_type)
+        return ListResponseModel[AreaResponse](
+            status_code=status.HTTP_200_OK,
+            data=areas,
+            records_per_page=20,
+            total_count=len(areas),
+        )
+
+    except AreaInvalidHierarchyException as e:
+        logger.warning(
+            "Invalid parent type for get children",
+            parent_id=parent_id,
+            parent_type=parent_type,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to get areas by parent",
+            parent_id=parent_id,
+            parent_type=parent_type,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get child areas",
+        )
+
+
+@router.get(
+    "/hierarchy/nations",
+    response_model=ResponseModel[list[AreaListItem]],
+    responses={
+        200: {"description": "Nations retrieved successfully"},
+    },
+    summary="Get all nations",
+    description="Get all active nations (top-level areas)",
+)
+async def get_all_nations(
+    area_service: AreaServiceDep,
+):
+    """
+    Get all active nations.
+
+    Returns minimal data for all nations. Useful for populating dropdowns.
+    """
+    try:
+        nations = await area_service.get_nations()
+        return ResponseModel(status_code=status.HTTP_200_OK, data=nations)
+
+    except Exception as e:
+        logger.error(
+            "Failed to get nations",
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get nations",
+        )
+
+@router.get(
+    "/nation/{nation_id}/zones",
+    response_model=ResponseModel[list[AreaResponse]],
+    responses={
+        200: {"description": "Zones retrieved successfully"},
+    },
+    summary="Get zones by nation",
+    description="Get all zones under a specific nation",
+)
+async def get_zones_by_nation(
+    nation_id: Annotated[int, Path(description="Nation ID", ge=1)],
+    area_service: AreaServiceDep,
+):
+    """
+    Get all zones under a nation.
+
+    Convenience endpoint for navigating the hierarchy.
+    """
+    try:
+        zones = await area_service.get_zones_by_nation(nation_id)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=zones)
+
+    except Exception as e:
+        logger.error(
+            "Failed to get zones by nation",
+            nation_id=nation_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get zones",
+        )
+
+
+@router.get(
+    "/zone/{zone_id}/regions",
+    response_model=ResponseModel[list[AreaResponse]],
+    responses={
+        200: {"description": "Regions retrieved successfully"},
+    },
+    summary="Get regions by zone",
+    description="Get all regions under a specific zone",
+)
+async def get_regions_by_zone(
+    zone_id: Annotated[int, Path(description="Zone ID", ge=1)],
+    area_service: AreaServiceDep,
+):
+    """
+    Get all regions under a zone.
+
+    Convenience endpoint for navigating the hierarchy.
+    """
+    try:
+        regions = await area_service.get_regions_by_zone(zone_id)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=regions)
+
+    except Exception as e:
+        logger.error(
+            "Failed to get regions by zone",
+            zone_id=zone_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get regions",
+        )
+
+
+@router.get(
+    "/region/{region_id}/areas",
+    response_model=ResponseModel[list[AreaResponse]],
+    responses={
+        200: {"description": "Areas retrieved successfully"},
+    },
+    summary="Get areas by region",
+    description="Get all areas under a specific region",
+)
+async def get_areas_by_region(
+    region_id: Annotated[int, Path(description="Region ID", ge=1)],
+    area_service: AreaServiceDep,
+):
+    """
+    Get all areas under a region.
+
+    Convenience endpoint for navigating the hierarchy.
+    """
+    try:
+        areas = await area_service.get_areas_by_region(region_id)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=areas)
+
+    except Exception as e:
+        logger.error(
+            "Failed to get areas by region",
+            region_id=region_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get areas",
+        )
+
+
+@router.get(
+    "/area/{area_id}/divisions",
+    response_model=ResponseModel[list[AreaResponse]],
+    responses={
+        200: {"description": "Divisions retrieved successfully"},
+    },
+    summary="Get divisions by area",
+    description="Get all divisions under a specific area",
+)
+async def get_divisions_by_area(
+    area_id: Annotated[int, Path(description="Area ID", ge=1)],
+    area_service: AreaServiceDep,
+):
+    """
+    Get all divisions under an area.
+
+    Convenience endpoint for navigating the hierarchy.
+    """
+    try:
+        divisions = await area_service.get_divisions_by_area(area_id)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=divisions)
+
+    except Exception as e:
+        logger.error(
+            "Failed to get divisions by area",
+            area_id=area_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get divisions",
+        )
+
+
+@router.get(
+    "/exists/{area_id}",
+    response_model=ResponseModel[dict],
+    responses={
+        200: {"description": "Existence check completed"},
+    },
+    summary="Check if area exists",
+    description="Check if an area with the given ID exists",
+)
+async def check_area_exists(
+    area_id: Annotated[int, Path(description="Area ID", ge=1)],
+    area_service: AreaServiceDep,
+):
+    """
+    Check if an area exists.
+
+    Returns a boolean indicating whether the area exists.
+    """
+    try:
+        exists = await area_service.check_area_exists(area_id)
+        return ResponseModel(
+            status_code=status.HTTP_200_OK,
+            data={"area_id": area_id, "exists": exists},
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to check area existence",
+            area_id=area_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to check area existence",
+        )
+
+
+@router.get(
+    "/count/active",
+    response_model=ResponseModel[dict],
+    responses={
+        200: {"description": "Count retrieved successfully"},
+    },
+    summary="Get active areas count",
+    description="Get the total count of active areas, optionally filtered by type",
+)
+async def get_active_areas_count(
+    area_service: AreaServiceDep,
+    area_type: Annotated[
+        str | None,
+        Query(description="Optional filter by area type"),
+    ] = None,
+):
+    """
+    Get count of active areas.
+
+    Returns the total number of areas with is_active=true.
+    Optionally filter by area type.
+    """
+    try:
+        count = await area_service.get_active_areas_count(area_type)
+        return ResponseModel(
+            status_code=status.HTTP_200_OK,
+            data={"area_type": area_type or "ALL", "active_count": count},
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to get active areas count",
+            area_type=area_type,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get active areas count",
+        )
+

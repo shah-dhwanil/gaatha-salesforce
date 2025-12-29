@@ -1,15 +1,13 @@
-# Dependency to get area service
-from api.repository.area import AreaRepository
-from api.service.area import AreaService
 from typing import Annotated
-from api.database import get_db_pool
-from fastapi.params import Depends
-from api.database import DatabasePool
+from fastapi import Depends
+from api.service.area import AreaService
+from api.dependencies.common import DatabasePoolDep
+from api.dependencies.common import CompanyIDDep
 
-
-async def get_area_service(
-    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
+def get_area_service(
+    db_pool: DatabasePoolDep,
+    company_id: CompanyIDDep,
 ) -> AreaService:
-    """Dependency to create and return AreaService instance."""
-    area_repository = AreaRepository(db)
-    return AreaService(area_repository)
+    return AreaService(db_pool, company_id) 
+
+AreaServiceDep = Annotated[AreaService, Depends(get_area_service)]

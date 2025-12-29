@@ -1,626 +1,672 @@
-from uuid import UUID
-from api.database import DatabasePool
+"""
+Repository for Company entity operations.
+
+This repository handles all database operations for companies in the salesforce schema.
+Companies are stored in the public salesforce schema (not tenant-specific).
+"""
+
 from typing import Optional
-from asyncpg import Connection, UniqueViolationError
-from uuid_utils.compat import uuid7
+from uuid import UUID
+
+import asyncpg
 import structlog
+
+from api.database import DatabasePool
 from api.exceptions.company import (
     CompanyAlreadyExistsException,
     CompanyNotFoundException,
+    CompanyOperationException,
 )
-from api.models.company import CompanyInDB
-from api.repository.utils import get_schema_name, set_search_path
+from api.models.company import CompanyCreate, CompanyInDB, CompanyListItem, CompanyUpdate
 
 logger = structlog.get_logger(__name__)
 
 
 class CompanyRepository:
-    """Repository for managing company data in the salesforce schema.
+    """
+    Repository for managing Company entities in the salesforce schema.
 
-    This repository handles company operations where:
-    - Company information is stored in the 'salesforce.company' table
-
-    Attributes:
-        db_pool: Database connection pool for executing queries
+    This repository provides methods for CRUD operations on companies.
+    All methods raise exceptions when records are not found.
     """
 
-    def __init__(self, db_pool: DatabasePool):
-        """Initialize the CompanyRepository with a database pool.
+    def __init__(self, db_pool: DatabasePool) -> None:
+        """
+        Initialize the CompanyRepository.
 
         Args:
-            db_pool: DatabasePool instance for managing database connections
+            db_pool: Database pool instance for connection management
         """
         self.db_pool = db_pool
-        logger.debug("CompanyRepository initialized")
 
-    async def __create_company(
-        self,
-        connection: Connection,
-        name: str,
-        gst_no: str,
-        cin_no: str,
-        address: str,
+    async def _create_company(
+        self, company_data: CompanyCreate, connection: asyncpg.Connection
     ) -> CompanyInDB:
-        """Create a new company in the database.
-
-        Creates company record in salesforce.company table.
+        """
+        Private method to create a company with a provided connection.
 
         Args:
+            company_data: Company data to create
             connection: Database connection
-            name: Name of the company
-            gst_no: GST number (required)
-            cin_no: CIN number (required)
-            address: Company address (required)
 
         Returns:
-            CompanyInDB: Created company object with all details
+            Created company
 
         Raises:
-            CompanyAlreadyExistsException: If GST or CIN number already exists
+            CompanyAlreadyExistsException: If company with same GST/CIN exists
+            CompanyOperationException: If creation fails
         """
-        company_id = uuid7()
-        logger.debug(
-            "Creating new company",
-            company_id=str(company_id),
-            name=name,
-            gst_no=gst_no,
-            cin_no=cin_no,
-        )
-
-        query = """
-        INSERT INTO company (id, name, gst_no, cin_no, address) 
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING *;
-        """
-
         try:
-            await set_search_path(connection, "salesforce")
-            rs = await connection.fetchrow(
-                query, company_id, name, gst_no, cin_no, address
+
+            # Insert the company
+            row = await connection.fetchrow(
+                """
+                INSERT INTO salesforce.company (name, gst_no, cin_no, address)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id, name, gst_no, cin_no, address, is_active, created_at, updated_at
+                """,
+                company_data.name,
+                company_data.gst_no,
+                company_data.cin_no,
+                company_data.address,
             )
-            logger.debug(
-                "Company record created in salesforce schema",
-                company_id=str(company_id),
-                name=name,
+
+            logger.info(
+                "Company created successfully",
+                company_id=str(row["id"]),
+                company_name=company_data.name,
             )
-        except UniqueViolationError as e:
-            error_msg = str(e)
-            field = "gst_no" if "gst_no" in error_msg else "cin_no"
+
+            return CompanyInDB(**dict(row))
+
+        except asyncpg.UniqueViolationError as e:
+            if "uniq_company_gst_no" in str(e):
+                raise CompanyAlreadyExistsException(gst_no=company_data.gst_no)
+            elif "uniq_company_cin_no" in str(e):
+                raise CompanyAlreadyExistsException(cin_no=company_data.cin_no)
+            else:
+                raise CompanyOperationException(
+                    message=f"Failed to create company: {str(e)}",
+                    operation="create",
+                ) from e
+        except Exception as e:
             logger.error(
-                "Company creation failed - duplicate value",
-                name=name,
-                field=field,
-                error=error_msg,
+                "Failed to create company",
+                company_name=company_data.name,
+                error=str(e),
             )
-            raise CompanyAlreadyExistsException(
-                field=field, message=f"Company with this {field} already exists."
+            raise CompanyOperationException(
+                message=f"Failed to create company: {str(e)}",
+                operation="create",
             ) from e
-        if not rs:
-            logger.error(
-                "Company creation failed - no record returned",
-                name=name,
-            )
-            raise Exception("Failed to create company record.")
-        logger.info(
-            "Company created successfully", company_id=str(company_id), name=name
-        )
-        return CompanyInDB(
-            id=rs["id"],
-            name=rs["name"],
-            gst_no=rs["gst_no"],
-            cin_no=rs["cin_no"],
-            address=rs["address"],
-            is_active=rs["is_active"],
-            created_at=rs["created_at"],
-            updated_at=rs["updated_at"],
-        )
-
-    async def __get_company_by_id(
-        self, connection: Connection, company_id: UUID
-    ) -> CompanyInDB:
-        """Retrieve a company by ID.
-
-        Queries salesforce.company table.
-
-        Args:
-            connection: Database connection
-            company_id: UUID of the company
-
-        Returns:
-            CompanyInDB: Complete company object
-
-        Raises:
-            CompanyNotFoundException: If company not found
-        """
-        logger.debug("Fetching company by ID", company_id=str(company_id))
-
-        find_company_query = """
-        SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
-        FROM company
-        WHERE id = $1;
-        """
-
-        await set_search_path(connection, "salesforce")
-        rs = await connection.fetchrow(find_company_query, company_id)
-
-        if rs:
-            logger.debug(
-                "Company found in salesforce schema",
-                company_id=str(company_id),
-            )
-            return CompanyInDB(
-                id=rs["id"],
-                name=rs["name"],
-                gst_no=rs["gst_no"],
-                cin_no=rs["cin_no"],
-                address=rs["address"],
-                is_active=rs["is_active"],
-                created_at=rs["created_at"],
-                updated_at=rs["updated_at"],
-            )
-
-        logger.warning("Company not found", company_id=str(company_id))
-        raise CompanyNotFoundException(field="id")
-
-    async def __get_company_by_gst_no(
-        self, connection: Connection, gst_no: str
-    ) -> CompanyInDB:
-        """Retrieve a company by GST number.
-
-        Queries salesforce.company table.
-
-        Args:
-            connection: Database connection
-            gst_no: GST number to search for
-
-        Returns:
-            CompanyInDB: Complete company object
-
-        Raises:
-            CompanyNotFoundException: If company not found
-        """
-        logger.debug("Fetching company by GST number", gst_no=gst_no)
-
-        find_company_query = """
-        SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
-        FROM company
-        WHERE gst_no = $1 AND is_active = TRUE;
-        """
-
-        await set_search_path(connection, "salesforce")
-        rs = await connection.fetchrow(find_company_query, gst_no)
-
-        if rs:
-            logger.debug(
-                "Company found in salesforce schema",
-                gst_no=gst_no,
-            )
-            return CompanyInDB(
-                id=rs["id"],
-                name=rs["name"],
-                gst_no=rs["gst_no"],
-                cin_no=rs["cin_no"],
-                address=rs["address"],
-                is_active=rs["is_active"],
-                created_at=rs["created_at"],
-                updated_at=rs["updated_at"],
-            )
-
-        logger.warning("Company not found", gst_no=gst_no)
-        raise CompanyNotFoundException(field="gst_no")
-
-    async def __get_company_by_cin_no(
-        self, connection: Connection, cin_no: str
-    ) -> CompanyInDB:
-        """Retrieve a company by CIN number.
-
-        Queries salesforce.company table.
-
-        Args:
-            connection: Database connection
-            cin_no: CIN number to search for
-
-        Returns:
-            CompanyInDB: Complete company object
-
-        Raises:
-            CompanyNotFoundException: If company not found
-        """
-        logger.debug("Fetching company by CIN number", cin_no=cin_no)
-
-        find_company_query = """
-        SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
-        FROM company
-        WHERE cin_no = $1 AND is_active = TRUE;
-        """
-
-        await set_search_path(connection, "salesforce")
-        rs = await connection.fetchrow(find_company_query, cin_no)
-
-        if rs:
-            logger.debug(
-                "Company found in salesforce schema",
-                cin_no=cin_no,
-            )
-            return CompanyInDB(
-                id=rs["id"],
-                name=rs["name"],
-                gst_no=rs["gst_no"],
-                cin_no=rs["cin_no"],
-                address=rs["address"],
-                is_active=rs["is_active"],
-                created_at=rs["created_at"],
-                updated_at=rs["updated_at"],
-            )
-
-        logger.warning("Company not found", cin_no=cin_no)
-        raise CompanyNotFoundException(field="cin_no")
-
-    async def __get_all_companies(self, connection: Connection) -> list[CompanyInDB]:
-        """Retrieve all active companies.
-
-        Fetches all companies from salesforce.company table.
-
-        Args:
-            connection: Database connection
-
-        Returns:
-            list[CompanyInDB]: List of all active companies
-        """
-        logger.debug("Fetching all companies")
-
-        find_companies_query = """
-        SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
-        FROM company
-        WHERE is_active = TRUE;
-        """
-
-        await set_search_path(connection, "salesforce")
-        rs = await connection.fetch(find_companies_query)
-
-        companies = []
-        for record in rs:
-            companies.append(
-                CompanyInDB(
-                    id=record["id"],
-                    name=record["name"],
-                    gst_no=record["gst_no"],
-                    cin_no=record["cin_no"],
-                    address=record["address"],
-                    is_active=record["is_active"],
-                    created_at=record["created_at"],
-                    updated_at=record["updated_at"],
-                )
-            )
-
-        logger.debug(
-            "Companies fetched",
-            company_count=len(companies),
-        )
-        return companies
-
-    async def __update_company(
-        self,
-        connection: Connection,
-        company_id: UUID,
-        name: Optional[str] = None,
-        gst_no: Optional[str] = None,
-        cin_no: Optional[str] = None,
-        address: Optional[str] = None,
-    ) -> CompanyInDB:
-        """Update company details.
-
-        Updates company in salesforce.company table.
-
-        Args:
-            connection: Database connection
-            company_id: UUID of the company to update
-            name: New name (optional)
-            gst_no: New GST number (optional)
-            cin_no: New CIN number (optional)
-            address: New address (optional)
-
-        Returns:
-            CompanyInDB: Updated company object
-
-        Raises:
-            ValueError: If no fields provided for update
-            CompanyNotFoundException: If company not found
-            CompanyAlreadyExistsException: If GST or CIN already exists
-        """
-        logger.debug(
-            "Updating company",
-            company_id=str(company_id),
-            has_name=name is not None,
-            has_gst=gst_no is not None,
-            has_cin=cin_no is not None,
-            has_address=address is not None,
-        )
-
-        update_fields = []
-        update_values = []
-
-        if name is not None:
-            update_fields.append(f"name = ${len(update_values) + 2}")
-            update_values.append(name)
-        if gst_no is not None:
-            update_fields.append(f"gst_no = ${len(update_values) + 2}")
-            update_values.append(gst_no)
-        if cin_no is not None:
-            update_fields.append(f"cin_no = ${len(update_values) + 2}")
-            update_values.append(cin_no)
-        if address is not None:
-            update_fields.append(f"address = ${len(update_values) + 2}")
-            update_values.append(address)
-
-        if not update_fields:
-            logger.error("No fields provided for update", company_id=str(company_id))
-            raise ValueError("At least one field must be provided for update")
-
-        await set_search_path(connection, "salesforce")
-
-        update_query = f"""
-        UPDATE company
-        SET {", ".join(update_fields)}
-        WHERE id = $1
-        RETURNING *;
-        """
-
-        try:
-            rs = await connection.fetchrow(update_query, company_id, *update_values)
-        except UniqueViolationError as e:
-            error_msg = str(e)
-            field = "gst_no" if "gst_no" in error_msg else "cin_no"
-            logger.error(
-                "Company update failed - duplicate value",
-                company_id=str(company_id),
-                field=field,
-                error=error_msg,
-            )
-            raise CompanyAlreadyExistsException(
-                field=field, message=f"Company with this {field} already exists."
-            ) from e
-
-        if not rs:
-            logger.warning("Company not found for update", company_id=str(company_id))
-            raise CompanyNotFoundException(field="id")
-
-        logger.info("Company updated successfully", company_id=str(company_id))
-        return CompanyInDB(
-            id=rs["id"],
-            name=rs["name"],
-            gst_no=rs["gst_no"],
-            cin_no=rs["cin_no"],
-            address=rs["address"],
-            is_active=rs["is_active"],
-            created_at=rs["created_at"],
-            updated_at=rs["updated_at"],
-        )
-
-    async def __delete_company(self, connection: Connection, company_id: UUID) -> None:
-        """Delete a company from the database (soft delete).
-
-        Marks company as inactive in salesforce.company table.
-
-        Args:
-            connection: Database connection
-            company_id: UUID of the company to delete
-
-        Raises:
-            CompanyNotFoundException: If company not found
-        """
-        logger.debug(
-            "Soft deleting company",
-            company_id=str(company_id),
-        )
-
-        delete_company_query = """
-        UPDATE company
-        SET is_active = FALSE
-        WHERE id = $1;
-        """
-
-        await set_search_path(connection, "salesforce")
-        result = await connection.execute(delete_company_query, company_id)
-
-        if result == "UPDATE 0":
-            logger.warning("Company not found for deletion", company_id=str(company_id))
-            raise CompanyNotFoundException(field="id")
-
-        logger.info("Company soft deleted successfully", company_id=str(company_id))
 
     async def create_company(
-        self,
-        name: str,
-        gst_no: str,
-        cin_no: str,
-        address: str,
-        *,
-        connection: Optional[Connection] = None,
+        self, company_data: CompanyCreate, connection: Optional[asyncpg.Connection] = None
     ) -> CompanyInDB:
-        """Create a new company in the database.
-
-        Public interface for company creation. Manages connection pooling if needed.
+        """
+        Create a new company.
 
         Args:
-            name: Company name
-            gst_no: GST number (required)
-            cin_no: CIN number (required)
-            address: Company address (required)
-            connection: Optional existing connection (for transactions)
+            company_data: Company data to create
+            connection: Optional database connection. If not provided, a new one is acquired.
 
         Returns:
-            CompanyInDB: Created company object
+            Created company
+
+        Raises:
+            CompanyAlreadyExistsException: If company with same GST/CIN exists
+            CompanyOperationException: If creation fails
         """
-        logger.info("create_company called", name=name)
-        if connection is None:
-            async with self.db_pool.acquire() as conn:
-                return await self.__create_company(conn, name, gst_no, cin_no, address)
-        return await self.__create_company(connection, name, gst_no, cin_no, address)
+        if connection:
+            return await self._create_company(company_data, connection)
+
+        async with self.db_pool.acquire() as conn:
+            return await self._create_company(company_data, conn)
+
+    async def _get_company_by_id(
+        self, company_id: UUID, connection: asyncpg.Connection
+    ) -> CompanyInDB:
+        """
+        Private method to get a company by ID with a provided connection.
+
+        Args:
+            company_id: UUID of the company
+            connection: Database connection
+
+        Returns:
+            Company
+
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If retrieval fails
+        """
+        try:
+            row = await connection.fetchrow(
+                """
+                SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
+                FROM salesforce.company
+                WHERE id = $1
+                """,
+                company_id,
+            )
+
+            if not row:
+                raise CompanyNotFoundException(company_id=company_id)
+
+            return CompanyInDB(**dict(row))
+
+        except CompanyNotFoundException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get company by id",
+                company_id=str(company_id),
+                error=str(e),
+            )
+            raise CompanyOperationException(
+                message=f"Failed to get company: {str(e)}",
+                operation="get",
+            ) from e
 
     async def get_company_by_id(
-        self, company_id: UUID, *, connection: Optional[Connection] = None
+        self, company_id: UUID, connection: Optional[asyncpg.Connection] = None
     ) -> CompanyInDB:
-        """Retrieve a company by ID.
-
-        Public interface for fetching company by ID.
+        """
+        Get a company by ID.
 
         Args:
-            company_id: Company UUID
-            connection: Optional existing connection
+            company_id: UUID of the company
+            connection: Optional database connection. If not provided, a new one is acquired.
 
         Returns:
-            CompanyInDB: Company object with complete details
-        """
-        logger.info("get_company_by_id called", company_id=str(company_id))
-        if connection is None:
-            async with self.db_pool.acquire() as conn:
-                return await self.__get_company_by_id(conn, company_id)
-        return await self.__get_company_by_id(connection, company_id)
+            Company
 
-    async def get_company_by_gst_no(
-        self, gst_no: str, *, connection: Optional[Connection] = None
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If retrieval fails
+        """
+        if connection:
+            return await self._get_company_by_id(company_id, connection)
+
+        async with self.db_pool.acquire() as conn:
+            return await self._get_company_by_id(company_id, conn)
+
+    async def _get_company_by_gst(
+        self, gst_no: str, connection: asyncpg.Connection
     ) -> CompanyInDB:
-        """Retrieve a company by GST number.
-
-        Public interface for fetching company by GST number.
+        """
+        Private method to get a company by GST number with a provided connection.
 
         Args:
-            gst_no: GST number to search for
-            connection: Optional existing connection
+            gst_no: GST number of the company
+            connection: Database connection
 
         Returns:
-            CompanyInDB: Company object with complete details
-        """
-        logger.info("get_company_by_gst_no called", gst_no=gst_no)
-        if connection is None:
-            async with self.db_pool.acquire() as conn:
-                return await self.__get_company_by_gst_no(conn, gst_no)
-        return await self.__get_company_by_gst_no(connection, gst_no)
+            Company
 
-    async def get_company_by_cin_no(
-        self, cin_no: str, *, connection: Optional[Connection] = None
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If retrieval fails
+        """
+        try:
+            row = await connection.fetchrow(
+                """
+                SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
+                FROM salesforce.company
+                WHERE gst_no = $1 AND is_active = true
+                """,
+                gst_no,
+            )
+
+            if not row:
+                raise CompanyNotFoundException(gst_no=gst_no)
+
+            return CompanyInDB(**dict(row))
+
+        except CompanyNotFoundException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get company by GST",
+                gst_no=gst_no,
+                error=str(e),
+            )
+            raise CompanyOperationException(
+                message=f"Failed to get company: {str(e)}",
+                operation="get",
+            ) from e
+
+    async def get_company_by_gst(
+        self, gst_no: str, connection: Optional[asyncpg.Connection] = None
     ) -> CompanyInDB:
-        """Retrieve a company by CIN number.
-
-        Public interface for fetching company by CIN number.
+        """
+        Get a company by GST number.
 
         Args:
-            cin_no: CIN number to search for
-            connection: Optional existing connection
+            gst_no: GST number of the company
+            connection: Optional database connection. If not provided, a new one is acquired.
 
         Returns:
-            CompanyInDB: Company object with complete details
+            Company
+
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If retrieval fails
         """
-        logger.info("get_company_by_cin_no called", cin_no=cin_no)
-        if connection is None:
-            async with self.db_pool.acquire() as conn:
-                return await self.__get_company_by_cin_no(conn, cin_no)
-        return await self.__get_company_by_cin_no(connection, cin_no)
+        if connection:
+            return await self._get_company_by_gst(gst_no, connection)
 
-    async def get_all_companies(
-        self, *, connection: Optional[Connection] = None
-    ) -> list[CompanyInDB]:
-        """Retrieve all active companies.
+        async with self.db_pool.acquire() as conn:
+            return await self._get_company_by_gst(gst_no, conn)
 
-        Public interface for fetching all companies.
+    async def _get_company_by_cin(
+        self, cin_no: str, connection: asyncpg.Connection
+    ) -> CompanyInDB:
+        """
+        Private method to get a company by CIN number with a provided connection.
 
         Args:
-            connection: Optional existing connection
+            cin_no: CIN number of the company
+            connection: Database connection
 
         Returns:
-            list[CompanyInDB]: List of all active companies
+            Company
+
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If retrieval fails
         """
-        logger.info("get_all_companies called")
-        if connection is None:
-            async with self.db_pool.acquire() as conn:
-                return await self.__get_all_companies(conn)
-        return await self.__get_all_companies(connection)
+        try:
+            row = await connection.fetchrow(
+                """
+                SELECT id, name, gst_no, cin_no, address, is_active, created_at, updated_at
+                FROM salesforce.company
+                WHERE cin_no = $1 AND is_active = true
+                """,
+                cin_no,
+            )
+
+            if not row:
+                raise CompanyNotFoundException(cin_no=cin_no)
+
+            return CompanyInDB(**dict(row))
+
+        except CompanyNotFoundException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get company by CIN",
+                cin_no=cin_no,
+                error=str(e),
+            )
+            raise CompanyOperationException(
+                message=f"Failed to get company: {str(e)}",
+                operation="get",
+            ) from e
+
+    async def get_company_by_cin(
+        self, cin_no: str, connection: Optional[asyncpg.Connection] = None
+    ) -> CompanyInDB:
+        """
+        Get a company by CIN number.
+
+        Args:
+            cin_no: CIN number of the company
+            connection: Optional database connection. If not provided, a new one is acquired.
+
+        Returns:
+            Company
+
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If retrieval fails
+        """
+        if connection:
+            return await self._get_company_by_cin(cin_no, connection)
+
+        async with self.db_pool.acquire() as conn:
+            return await self._get_company_by_cin(cin_no, conn)
+
+    async def _list_companies(
+        self,
+        connection: asyncpg.Connection,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[CompanyListItem]:
+        """
+        Private method to list companies with a provided connection.
+        Returns minimal data to optimize performance.
+
+        Args:
+            connection: Database connection
+            is_active: Filter by active status
+            limit: Maximum number of companies to return
+            offset: Number of companies to skip
+
+        Returns:
+            List of companies with minimal data
+
+        Raises:
+            CompanyOperationException: If listing fails
+        """
+        try:
+            # Only select minimal fields for list view
+            query = """
+                SELECT id, name, is_active
+                FROM salesforce.company     
+            """
+            params = []
+            param_count = 0
+
+            # Add WHERE clause if filtering by is_active
+            if is_active is not None:
+                param_count += 1
+                query += f" WHERE is_active = ${param_count}"
+                params.append(is_active)
+
+            # Add ordering
+            query += " ORDER BY name ASC"
+
+            # Add limit and offset
+            if limit is not None:
+                param_count += 1
+                query += f" LIMIT ${param_count}"
+                params.append(limit)
+
+            if offset is not None:
+                param_count += 1
+                query += f" OFFSET ${param_count}"
+                params.append(offset)
+
+            rows = await connection.fetch(query, *params)
+
+            return [CompanyListItem(**dict(row)) for row in rows]
+
+        except Exception as e:
+            logger.error(
+                "Failed to list companies",
+                error=str(e),
+            )
+            raise CompanyOperationException(
+                message=f"Failed to list companies: {str(e)}",
+                operation="list",
+            )
+
+    async def list_companies(
+        self,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
+        connection: Optional[asyncpg.Connection] = None,
+    ) -> list[CompanyListItem]:
+        """
+        List all companies with optional filtering.
+        Returns minimal data to optimize performance.
+
+        Args:
+            is_active: Filter by active status
+            limit: Maximum number of companies to return
+            offset: Number of companies to skip
+            connection: Optional database connection. If not provided, a new one is acquired.
+
+        Returns:
+            List of companies with minimal data
+
+        Raises:
+            CompanyOperationException: If listing fails
+        """
+        if connection:
+            return await self._list_companies(connection, is_active, limit, offset)
+
+        async with self.db_pool.acquire() as conn:
+            return await self._list_companies(conn, is_active, limit, offset)
+
+    async def _count_companies(
+        self,
+        connection: asyncpg.Connection,
+        is_active: Optional[bool] = None,
+    ) -> int:
+        """
+        Private method to count companies with a provided connection.
+
+        Args:
+            connection: Database connection
+            is_active: Filter by active status
+
+        Returns:
+            Count of companies
+
+        Raises:
+            CompanyOperationException: If counting fails
+        """
+        try:
+            if is_active is not None:
+                count = await connection.fetchval(
+                    "SELECT COUNT(*) FROM salesforce.company WHERE is_active = $1",
+                    is_active,
+                )
+            else:
+                count = await connection.fetchval("SELECT COUNT(*) FROM salesforce.company")
+
+            return count or 0
+
+        except Exception as e:
+            logger.error(
+                "Failed to count companies",
+                error=str(e),
+            )
+            raise CompanyOperationException(
+                message=f"Failed to count companies: {str(e)}",
+                operation="count",
+            )
+
+    async def count_companies(
+        self,
+        is_active: Optional[bool] = None,
+        connection: Optional[asyncpg.Connection] = None,
+    ) -> int:
+        """
+        Count companies with optional filtering.
+
+        Args:
+            is_active: Filter by active status
+            connection: Optional database connection. If not provided, a new one is acquired.
+
+        Returns:
+            Count of companies
+
+        Raises:
+            CompanyOperationException: If counting fails
+        """
+        if connection:
+            return await self._count_companies(connection, is_active)
+
+        async with self.db_pool.acquire() as conn:
+            return await self._count_companies(conn, is_active)
+
+    async def _update_company(
+        self,
+        company_id: UUID,
+        company_data: CompanyUpdate,
+        connection: asyncpg.Connection,
+    ) -> CompanyInDB:
+        """
+        Private method to update a company with a provided connection.
+
+        Args:
+            company_id: UUID of the company to update
+            company_data: Company data to update
+            connection: Database connection
+
+        Returns:
+            Updated company
+
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If update fails
+        """
+        try:
+            # Check if company exists
+            await self._get_company_by_id(company_id, connection)
+
+            # Build dynamic update query
+            update_fields = []
+            params = []
+            param_count = 0
+
+            if company_data.name is not None:
+                param_count += 1
+                update_fields.append(f"name = ${param_count}")
+                params.append(company_data.name)
+
+            if company_data.address is not None:
+                param_count += 1
+                update_fields.append(f"address = ${param_count}")
+                params.append(company_data.address)
+            
+            if company_data.gst_no is not None:
+                param_count += 1
+                update_fields.append(f"gst_no = ${param_count}")
+                params.append(company_data.gst_no)
+            
+            if company_data.cin_no is not None:
+                param_count += 1
+                update_fields.append(f"cin_no = ${param_count}")
+                params.append(company_data.cin_no)
+
+            if not update_fields:
+                # No fields to update, return current company
+                return await self._get_company_by_id(company_id, connection)
+
+            param_count += 1
+            params.append(company_id)
+
+            query = f"""
+                UPDATE salesforce.company
+                SET {", ".join(update_fields)}
+                WHERE id = ${param_count}
+                RETURNING id, name, gst_no, cin_no, address, is_active, created_at, updated_at
+            """
+            row = await connection.fetchrow(query, *params)
+
+            if not row:
+                raise CompanyNotFoundException(company_id=company_id)
+
+            logger.info(
+                "Company updated successfully",
+                company_id=str(company_id),
+            )
+
+            return CompanyInDB(**dict(row))
+        except asyncpg.UniqueViolationError as e:
+            if e.constraint == "uniq_company_gst_no":
+                raise CompanyAlreadyExistsException(gst_no=company_data.gst_no)
+            elif e.constraint == "uniq_company_cin_no":
+                raise CompanyAlreadyExistsException(cin_no=company_data.cin_no)
+            else:
+                raise CompanyOperationException(
+                    message=f"Failed to update company: {str(e)}",
+                    operation="update",
+                ) from e
+        except Exception as e:
+            logger.error(
+                "Failed to update company",
+                company_id=str(company_id),
+                error=str(e),
+            )
+            raise CompanyOperationException(
+                message=f"Failed to update company: {str(e)}",
+                operation="update",
+            )
 
     async def update_company(
         self,
         company_id: UUID,
-        name: Optional[str] = None,
-        gst_no: Optional[str] = None,
-        cin_no: Optional[str] = None,
-        address: Optional[str] = None,
-        *,
-        connection: Optional[Connection] = None,
+        company_data: CompanyUpdate,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> CompanyInDB:
-        """Update company details.
-
-        Public interface for updating company information.
+        """
+        Update an existing company.
 
         Args:
-            company_id: Company UUID
-            name: New name (optional)
-            gst_no: New GST number (optional)
-            cin_no: New CIN number (optional)
-            address: New address (optional)
-            connection: Optional existing connection
+            company_id: UUID of the company to update
+            company_data: Company data to update
+            connection: Optional database connection. If not provided, a new one is acquired.
 
         Returns:
-            CompanyInDB: Updated company object
+            Updated company
+
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If update fails
         """
-        logger.info("update_company called", company_id=str(company_id))
-        if connection is None:
-            async with self.db_pool.acquire() as conn:
-                return await self.__update_company(
-                    conn, company_id, name, gst_no, cin_no, address
-                )
-        return await self.__update_company(
-            connection, company_id, name, gst_no, cin_no, address
-        )
+        if connection:
+            return await self._update_company(company_id, company_data, connection)
+
+        async with self.db_pool.acquire() as conn:
+            return await self._update_company(company_id, company_data, conn)
+
+    async def _delete_company(
+        self, company_id: UUID, connection: asyncpg.Connection
+    ) -> CompanyInDB:
+        """
+        Private method to soft delete a company (set is_active=False) with a provided connection.
+
+        Args:
+            company_id: UUID of the company to soft delete
+            connection: Database connection
+
+        Returns:
+            Updated company with is_active=False
+
+        Raises:
+            CompanyNotFoundException: If company not found
+            CompanyOperationException: If soft deletion fails
+        """
+        try:
+            # Check if company exists
+            await self._get_company_by_id(company_id, connection)
+
+            # Soft delete company
+            await connection.execute(
+                "UPDATE salesforce.company SET is_active = FALSE WHERE id = $1",
+                company_id,
+            )
+
+            logger.info(
+                "Company soft deleted successfully",
+                company_id=str(company_id),
+            )
+
+            return await self._get_company_by_id(company_id, connection)
+
+        except CompanyNotFoundException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to soft delete company",
+                company_id=str(company_id),
+                error=str(e),
+            )
+            raise CompanyOperationException(
+                message=f"Failed to soft delete company: {str(e)}",
+                operation="soft_delete",
+            ) from e
 
     async def delete_company(
-        self,
-        company_id: UUID,
-        *,
-        connection: Optional[Connection] = None,
+        self, company_id: UUID, connection: Optional[asyncpg.Connection] = None
     ) -> None:
-        """Delete a company from the database (soft delete).
-
-        Public interface for soft-deleting companies.
+        """
+        Delete a company by setting is_active to False.
 
         Args:
-            company_id: Company UUID
-            connection: Optional existing connection
+            company_id: UUID of the company to delete
+            connection: Optional database connection. If not provided, a new one is acquired.
         """
-        logger.info(
-            "delete_company called",
-            company_id=str(company_id),
-        )
-        if connection is None:
-            async with self.db_pool.acquire() as conn:
-                return await self.__delete_company(conn, company_id)
-        return await self.__delete_company(connection, company_id)
+        if connection:
+            return await self._delete_company(company_id, connection)
 
-    async def create_company_schema(
-        self, company_id: UUID, *, connection: Optional[Connection] = None
-    ) -> None:
-        """Create a dedicated schema for the company.
+        async with self.db_pool.acquire() as conn:
+            return await self._delete_company(company_id, conn)
 
-        Args:
-            company_id: UUID of the company
-            connection: Database connection
-        """
-        schema_name = get_schema_name(company_id)
-        logger.info(
-            "Creating schema for company",
-            company_id=str(company_id),
-            schema_name=schema_name,
-        )
-
-        create_schema_query = f"""
-        CREATE SCHEMA IF NOT EXISTS {schema_name};
-        """
-        if connection is None:
-            async with self.db_pool.acquire() as conn:
-                await conn.execute(create_schema_query)
-        else:
-            await connection.execute(create_schema_query)
-        logger.info(
-            "Schema created for company",
-            company_id=str(company_id),
-            schema_name=schema_name,
-        )

@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS members(
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT pk_company_users PRIMARY KEY (id,is_active)
+    CONSTRAINT pk_company_users PRIMARY KEY (id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_members_area_id ON members(area_id);

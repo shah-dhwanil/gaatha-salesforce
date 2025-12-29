@@ -1,7 +1,10 @@
 from typing import Optional
-from pydantic import BaseModel
 from uuid import UUID
+from pydantic import BaseModel
 
+class AuthRequest(BaseModel):
+    username: str
+    otp_code: str
 
 class AuthenticatedUser(BaseModel):
     user_id: UUID
@@ -9,12 +12,6 @@ class AuthenticatedUser(BaseModel):
     company_id: Optional[UUID]
     role: str
 
-
-class LoginRequest(BaseModel):
-    username: str
-    otp_code: str
-
-
-class LoginResponse(BaseModel):
+class AuthResponse(BaseModel):
     user: AuthenticatedUser
     access_token: str

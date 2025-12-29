@@ -1,165 +1,128 @@
 """
-Company models for database and API operations.
-
-This module contains Pydantic models for company data validation,
-including database representations, API requests, and responses.
+Pydantic models for Company entity.
 """
 
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
+
 from pydantic import BaseModel, Field, field_validator
 
 
-class CompanyInDB(BaseModel):
-    """Company model representing database record."""
+class CompanyCreate(BaseModel):
+    """Model for creating a new company."""
 
-    id: UUID
-    name: str
-    gst_no: str
-    cin_no: str
-    address: str
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    name: str = Field(..., min_length=1, max_length=255, description="Company name")
+    gst_no: str = Field(..., min_length=15, max_length=15, description="GST number")
+    cin_no: str = Field(..., min_length=21, max_length=21, description="CIN number")
+    address: str = Field(..., min_length=1, description="Company address")
 
-
-# Request Models
-
-
-class CreateCompanyRequest(BaseModel):
-    """Request model for creating a new company."""
-
-    name: str = Field(
-        ..., min_length=1, max_length=255, description="Name of the company"
-    )
-    gst_no: str = Field(
-        ..., min_length=15, max_length=15, description="GST number (15 characters)"
-    )
-    cin_no: str = Field(
-        ..., min_length=21, max_length=21, description="CIN number (21 characters)"
-    )
-    address: str = Field(
-        ..., min_length=1, max_length=500, description="Company address"
-    )
-
-    @field_validator("name")
+    @field_validator("name", "address")
     @classmethod
-    def validate_name(cls, v: str) -> str:
-        """Validate and clean company name."""
+    def validate_non_empty(cls, v: str) -> str:
+        """Validate and normalize string fields."""
         if not v or not v.strip():
-            raise ValueError("Company name cannot be empty or whitespace")
+            raise ValueError("Field cannot be empty")
         return v.strip()
 
     @field_validator("gst_no")
     @classmethod
-    def validate_gst_no(cls, v: str) -> str:
-        """Validate and clean GST number."""
-        if not v or not v.strip():
-            raise ValueError("GST number cannot be empty or whitespace")
-        v_stripped = v.strip()
-        if len(v_stripped) != 15:
+    def validate_gst(cls, v: str) -> str:
+        """Validate GST number format."""
+        v = v.strip().upper()
+        if len(v) != 15:
             raise ValueError("GST number must be exactly 15 characters")
-        return v_stripped
+        return v
 
     @field_validator("cin_no")
     @classmethod
-    def validate_cin_no(cls, v: str) -> str:
-        """Validate and clean CIN number."""
-        if not v or not v.strip():
-            raise ValueError("CIN number cannot be empty or whitespace")
-        v_stripped = v.strip()
-        if len(v_stripped) != 21:
+    def validate_cin(cls, v: str) -> str:
+        """Validate CIN number format."""
+        v = v.strip().upper()
+        if len(v) != 21:
             raise ValueError("CIN number must be exactly 21 characters")
-        return v_stripped
-
-    @field_validator("address")
-    @classmethod
-    def validate_address(cls, v: str) -> str:
-        """Validate and clean address."""
-        if not v or not v.strip():
-            raise ValueError("Address cannot be empty or whitespace")
-        return v.strip()
-
-
-class UpdateCompanyRequest(BaseModel):
-    """Request model for updating a company."""
-
-    name: Optional[str] = Field(
-        None, min_length=1, max_length=255, description="Name of the company"
-    )
-    gst_no: Optional[str] = Field(
-        None, min_length=15, max_length=15, description="GST number (15 characters)"
-    )
-    cin_no: Optional[str] = Field(
-        None, min_length=21, max_length=21, description="CIN number (21 characters)"
-    )
-    address: Optional[str] = Field(
-        None, min_length=1, max_length=500, description="Company address"
-    )
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v: Optional[str]) -> Optional[str]:
-        """Validate and clean company name."""
-        if v is not None:
-            if not v.strip():
-                raise ValueError("Company name cannot be empty or whitespace")
-            return v.strip()
         return v
 
+
+class CompanyUpdate(BaseModel):
+    """Model for updating an existing company."""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    address: Optional[str] = Field(None, min_length=1)
+    gst_no: Optional[str] = Field(None, min_length=15, max_length=15)
+    cin_no: Optional[str] = Field(None, min_length=21, max_length=21)
+
+    @field_validator("name", "address")
+    @classmethod
+    def validate_non_empty(cls, v: Optional[str]) -> Optional[str]:
+        """Validate and normalize string fields."""
+        if v is not None:
+            if not v.strip():
+                raise ValueError("Field cannot be empty")
+            return v.strip()
+        return v
+    
     @field_validator("gst_no")
     @classmethod
-    def validate_gst_no(cls, v: Optional[str]) -> Optional[str]:
-        """Validate and clean GST number."""
+    def validate_gst(cls, v: Optional[str]) -> Optional[str]:
+        """Validate GST number format."""
         if v is not None:
-            if not v.strip():
-                raise ValueError("GST number cannot be empty or whitespace")
-            v_stripped = v.strip()
-            if len(v_stripped) != 15:
+            v = v.strip().upper()
+            if len(v) != 15:
                 raise ValueError("GST number must be exactly 15 characters")
-            return v_stripped.upper()
-        return v
-
+            return v
+        return v.upper()
+    
     @field_validator("cin_no")
     @classmethod
-    def validate_cin_no(cls, v: Optional[str]) -> Optional[str]:
-        """Validate and clean CIN number."""
+    def validate_cin(cls, v: Optional[str]) -> Optional[str]:
+        """Validate CIN number format."""
         if v is not None:
-            if not v.strip():
-                raise ValueError("CIN number cannot be empty or whitespace")
-            v_stripped = v.strip()
-            if len(v_stripped) != 21:
+            v = v.strip().upper()
+            if len(v) != 21:
                 raise ValueError("CIN number must be exactly 21 characters")
-            return v_stripped.upper()
-        return v
+            return v
+        return v.upper()    
 
-    @field_validator("address")
-    @classmethod
-    def validate_address(cls, v: Optional[str]) -> Optional[str]:
-        """Validate and clean address."""
-        if v is not None:
-            if not v.strip():
-                raise ValueError("Address cannot be empty or whitespace")
-            return v.strip()
-        return v
+class CompanyInDB(BaseModel):
+    """Model for Company as stored in database."""
 
-    def has_updates(self) -> bool:
-        """Check if any field has a value to update."""
-        return any([self.name, self.gst_no, self.cin_no, self.address])
-
-
-# Response Models
-
-
-class CompanyResponse(BaseModel):
-    """Response model for company operations."""
-
-    id: UUID = Field(..., description="Unique identifier of the company")
-    name: str = Field(..., description="Name of the company")
+    id: UUID = Field(..., description="Company unique identifier")
+    name: str = Field(..., description="Company name")
     gst_no: str = Field(..., description="GST number")
     cin_no: str = Field(..., description="CIN number")
     address: str = Field(..., description="Company address")
     is_active: bool = Field(..., description="Whether the company is active")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class CompanyResponse(BaseModel):
+    """Model for Company API response."""
+
+    id: UUID = Field(..., description="Company unique identifier")
+    name: str = Field(..., description="Company name")
+    gst_no: str = Field(..., description="GST number")
+    cin_no: str = Field(..., description="CIN number")
+    address: str = Field(..., description="Company address")
+    is_active: bool = Field(..., description="Whether the company is active")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class CompanyListItem(BaseModel):
+    """Minimal model for Company in list views to optimize performance."""
+
+    id: UUID = Field(..., description="Company unique identifier")
+    name: str = Field(..., description="Company name")
+    is_active: bool = Field(..., description="Whether the company is active")
+
+    class Config:
+        from_attributes = True
+

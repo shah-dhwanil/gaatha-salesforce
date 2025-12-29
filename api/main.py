@@ -1,25 +1,19 @@
-from granian.constants import Interfaces, Loops
-from granian.log import LogLevels
+from uvicorn import run
 from api.settings import get_settings
 from api.migrations import MigrationManager
-
-from granian.server import Server
 def main():
     settings = get_settings()
-    # MigrationManager.apply_main_migrations(settings.POSTGRES)
-    MigrationManager.apply_company_migrations(
-        settings.POSTGRES, schema_name="company_test",
-    )
-    server = Server(
-        target="api.app:app",
-        interface=Interfaces.ASGI,
-        address=settings.SERVER.HOST,
+    #MigrationManager.apply_company_migrations(settings.POSTGRES, "_019b368a7f187fd19501ae8814b5c588_")
+    run(
+        "api.app:app",
+        host=settings.SERVER.HOST,
         port=settings.SERVER.PORT,
         workers=settings.SERVER.WORKERS,
-        log_access=True if settings.ENVIRONMENT == "DEV" else False,
-        log_level=LogLevels.debug if settings.ENVIRONMENT == "DEV" else LogLevels.info,
-        loop=Loops.asyncio,
+        reload=settings.SERVER.RELOAD,
+        reload_dirs=["api"],
+        reload_excludes=["__pycache__", "*.pyc", "*.pyo", "*.pyd", "*.pyw", "*.pyz"],
+        reload_includes=["*.py"],
     )
-    server.serve()
+
 if __name__ == "__main__":
     main()

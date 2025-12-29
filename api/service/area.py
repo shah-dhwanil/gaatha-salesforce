@@ -1,486 +1,782 @@
 """
-Area service module for business logic.
+Service layer for Area entity operations.
 
-This service provides business logic layer for area operations,
-acting as an intermediary between API handlers and the area repository.
-It handles validation, business rules, and coordinates repository operations.
+This service provides business logic for hierarchical areas (NATION, ZONE, REGION, AREA, DIVISION),
+acting as an intermediary between the API layer and the repository layer.
 """
 
-from typing import Annotated
-from fastapi.params import Depends
-from api.database import get_db_pool
-from api.database import DatabasePool
+from typing import Optional
 from uuid import UUID
+
 import structlog
 
+from api.database import DatabasePool
+from api.exceptions.area import (
+    AreaAlreadyExistsException,
+    AreaInvalidHierarchyException,
+    AreaNotFoundException,
+    AreaOperationException,
+)
+from api.models.area import (
+    AreaCreate,
+    AreaInDB,
+    AreaListItem,
+    AreaResponse,
+    AreaType,
+    AreaUpdate,
+)
 from api.repository.area import AreaRepository
-from api.models.area import AreaInDB, AreaType
-from api.exceptions.area import InvalidAreaInputException
 
 logger = structlog.get_logger(__name__)
 
 
 class AreaService:
-    """Service class for area business logic.
+    """
+    Service for managing Area business logic.
 
-    This service handles business logic and validation for area operations,
-    coordinating between the API layer and the AreaRepository.
-
-    Attributes:
-        area_repository: Repository for area data operations
+    This service handles business logic, validation, and orchestration
+    for hierarchical area operations in a multi-tenant environment.
     """
 
-    def __init__(self, area_repository: AreaRepository):
-        """Initialize the AreaService with a repository.
-
-        Args:
-            area_repository: AreaRepository instance for data operations
+    def __init__(self, db_pool: DatabasePool, company_id: UUID) -> None:
         """
-        self.area_repository = area_repository
-        logger.debug("AreaService initialized")
-
-    async def create_area(
-        self,
-        company_id: UUID,
-        name: str,
-        type: AreaType,
-        area_id: int | None = None,
-        region_id: int | None = None,
-        zone_id: int | None = None,
-        nation_id: int | None = None,
-    ) -> AreaInDB:
-        """Create a new area with validation.
-
-        Validates input data and creates a new area through the repository.
+        Initialize the AreaService.
 
         Args:
-            company_id: UUID of the company the area belongs to
+            db_pool: Database pool instance for connection management
+            company_id: UUID of the company (tenant) for schema isolation
+        """
+        self.db_pool = db_pool
+        self.company_id = company_id
+        self.repository = AreaRepository(db_pool, company_id)
+        logger.debug(
+            "AreaService initialized",
+            company_id=str(company_id),
+        )
+
+    async def create_area(self, area_data: AreaCreate) -> AreaResponse:
+        """
+        Create a new area.
+
+        Args:
+            area_data: Area data to create
+
+        Returns:
+            Created area
+
+        Raises:
+            AreaAlreadyExistsException: If area with the same name and type already exists
+            AreaNotFoundException: If parent area doesn't exist
+            AreaInvalidHierarchyException: If hierarchy validation fails
+            AreaOperationException: If creation fails
+        """
+        try:
+            logger.info(
+                "Creating area",
+                area_name=area_data.name,
+                area_type=area_data.type,
+                company_id=str(self.company_id),
+            )
+            # Fetch data of it parent and set to the model
+            if area_data.type == AreaType.DIVISION.value:
+                parent_area = await self.repository.get_area_by_id(area_data.area_id)
+                if parent_area.type != AreaType.AREA.value:
+                    raise AreaInvalidHierarchyException(
+                        message="Division's parent area must be of type AREA",
+                    )
+                area_data.region_id = parent_area.region_id
+                area_data.zone_id = parent_area.zone_id
+                area_data.nation_id = parent_area.nation_id
+            elif area_data.type == AreaType.AREA.value:
+                parent_area = await self.repository.get_area_by_id(area_data.region_id)
+                if parent_area.type != AreaType.REGION.value:
+                    raise AreaInvalidHierarchyException(
+                        message="Area's parent region must be of type REGION",
+                    )
+                area_data.area_id = None
+                area_data.zone_id = parent_area.zone_id
+                area_data.nation_id = parent_area.nation_id
+            elif area_data.type == AreaType.REGION.value:
+                parent_area = await self.repository.get_area_by_id(area_data.zone_id)
+                if parent_area.type != AreaType.ZONE.value:
+                    raise AreaInvalidHierarchyException(
+                        message="Region's parent zone must be of type ZONE",
+                    )
+                area_data.area_id = None
+                area_data.region_id = None
+                area_data.nation_id = parent_area.nation_id
+            elif area_data.type == AreaType.ZONE.value:
+                parent_area = await self.repository.get_area_by_id(area_data.nation_id)
+                if parent_area.type != AreaType.NATION.value:
+                    raise AreaInvalidHierarchyException(
+                        message="Zone's parent nation must be of type NATION",
+                    )
+                area_data.area_id = None
+                area_data.region_id = None
+                area_data.zone_id = None
+            elif area_data.type == AreaType.NATION.value:
+                area_data.area_id = None
+                area_data.region_id = None
+                area_data.zone_id = None
+                area_data.nation_id = None
+            else:
+                raise AreaInvalidHierarchyException(
+                    message="Invalid area type",
+                )
+
+            # Create area using repository
+            area = await self.repository.create_area(area_data)
+
+            logger.info(
+                "Area created successfully",
+                area_id=area.id,
+                area_name=area.name,
+                area_type=area.type,
+                company_id=str(self.company_id),
+            )
+
+            return AreaResponse(**area.model_dump())
+
+        except (
+            AreaAlreadyExistsException,
+            AreaNotFoundException,
+            AreaInvalidHierarchyException,
+        ):
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to create area in service",
+                area_name=area_data.name,
+                area_type=area_data.type,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def get_area_by_id(self, area_id: int) -> AreaResponse:
+        """
+        Get an area by ID.
+
+        Args:
+            area_id: ID of the area
+
+        Returns:
+            Area
+
+        Raises:
+            AreaNotFoundException: If area not found
+            AreaOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting area by ID",
+                area_id=area_id,
+                company_id=str(self.company_id),
+            )
+
+            area = await self.repository.get_area_by_id(area_id)
+
+            return AreaResponse(**area.model_dump())
+
+        except AreaNotFoundException:
+            logger.warning(
+                "Area not found",
+                area_id=area_id,
+                company_id=str(self.company_id),
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get area in service",
+                area_id=area_id,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def get_area_by_name_and_type(
+        self, name: str, area_type: str
+    ) -> AreaResponse:
+        """
+        Get an area by name and type.
+
+        Args:
             name: Name of the area
-            type: Type of the area (DIVISION, AREA, REGION, ZONE, NATION)
-            area_id: Optional parent area ID
-            region_id: Optional parent region ID
-            zone_id: Optional parent zone ID
-            nation_id: Optional parent nation ID
+            area_type: Type of the area (NATION, ZONE, REGION, AREA, DIVISION)
 
         Returns:
-            AreaInDB: Created area object with all details
-
-        Raises:
-            AreaAlreadyExistsException: If area name already exists
-            ValueError: If validation fails
-        """
-        logger.info(
-            "Creating area",
-            name=name,
-            type=type,
-            company_id=str(company_id),
-        )
-
-        # Validate parent area types (requires database lookup)
-        if type == AreaType.DIVISION:
-            # At this point, model validation ensures area_id is not None
-            assert area_id is not None, (
-                "Model validation should ensure area_id is set for DIVISION"
-            )
-            parent_area = await self.area_repository.get_area_by_id(
-                company_id=company_id,
-                area_id=area_id,
-            )
-            if parent_area.type != AreaType.AREA:
-                raise InvalidAreaInputException(
-                    field="area_id",
-                    message="Division's parent area must be of type AREA",
-                )
-            region_id = parent_area.region_id
-            zone_id = parent_area.zone_id
-            nation_id = parent_area.nation_id
-
-        elif type == AreaType.AREA:
-            # At this point, model validation ensures region_id is not None
-            assert region_id is not None, (
-                "Model validation should ensure region_id is set for AREA"
-            )
-            parent_area = await self.area_repository.get_area_by_id(
-                company_id=company_id,
-                area_id=region_id,
-            )
-            if parent_area.type != AreaType.REGION:
-                raise InvalidAreaInputException(
-                    field="region_id",
-                    message="Area's parent region must be of type REGION",
-                )
-            zone_id = parent_area.zone_id
-            nation_id = parent_area.nation_id
-
-        elif type == AreaType.REGION:
-            # At this point, model validation ensures zone_id is not None
-            assert zone_id is not None, (
-                "Model validation should ensure zone_id is set for REGION"
-            )
-            parent_area = await self.area_repository.get_area_by_id(
-                company_id=company_id,
-                area_id=zone_id,
-            )
-            if parent_area.type != AreaType.ZONE:
-                raise InvalidAreaInputException(
-                    field="zone_id", message="Region's parent zone must be of type ZONE"
-                )
-            nation_id = parent_area.nation_id
-
-        elif type == AreaType.ZONE:
-            # At this point, model validation ensures nation_id is not None
-            assert nation_id is not None, (
-                "Model validation should ensure nation_id is set for ZONE"
-            )
-            parent_area = await self.area_repository.get_area_by_id(
-                company_id=company_id,
-                area_id=nation_id,
-            )
-            if parent_area.type != AreaType.NATION:
-                raise InvalidAreaInputException(
-                    field="nation_id",
-                    message="Zone's parent nation must be of type NATION",
-                )
-
-        # Create area through repository
-        area = await self.area_repository.create_area(
-            company_id=company_id,
-            name=name.strip(),
-            type=type,
-            area_id=area_id,
-            region_id=region_id,
-            zone_id=zone_id,
-            nation_id=nation_id,
-        )
-
-        logger.info(
-            "Area created successfully",
-            name=name,
-            area_id=area.id,
-            company_id=str(company_id),
-        )
-        return area
-
-    async def get_area_by_id(self, company_id: UUID, area_id: int) -> AreaInDB:
-        """Retrieve an area by ID.
-
-        Args:
-            company_id: UUID of the company
-            area_id: Area ID to search for
-
-        Returns:
-            AreaInDB: Complete area object
+            Area
 
         Raises:
             AreaNotFoundException: If area not found
-            ValueError: If validation fails
+            AreaOperationException: If retrieval fails
         """
-        logger.info("Fetching area by ID", area_id=area_id, company_id=str(company_id))
+        try:
+            logger.debug(
+                "Getting area by name and type",
+                area_name=name,
+                area_type=area_type,
+                company_id=str(self.company_id),
+            )
 
-        area = await self.area_repository.get_area_by_id(
-            company_id=company_id,
-            area_id=area_id,
-        )
+            area = await self.repository.get_area_by_name_and_type(name, area_type)
 
-        logger.info(
-            "Area fetched successfully", area_id=area_id, company_id=str(company_id)
-        )
-        return area
+            return AreaResponse(**area.model_dump())
 
-    async def get_area_by_name(self, company_id: UUID, name: str) -> AreaInDB:
-        """Retrieve an area by name.
+        except AreaNotFoundException:
+            logger.warning(
+                "Area not found",
+                area_name=name,
+                area_type=area_type,
+                company_id=str(self.company_id),
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get area in service",
+                area_name=name,
+                area_type=area_type,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
 
-        Args:
-            company_id: UUID of the company
-            name: Area name to search for
-
-        Returns:
-            AreaInDB: Complete area object
-
-        Raises:
-            AreaNotFoundException: If area not found
-            ValueError: If validation fails
-        """
-        logger.info("Fetching area by name", name=name, company_id=str(company_id))
-
-        area = await self.area_repository.get_area_by_name(
-            company_id=company_id,
-            name=name.strip(),
-        )
-
-        logger.info("Area fetched successfully", name=name, company_id=str(company_id))
-        return area
-
-    async def get_areas_by_company_id(
-        self, company_id: UUID, limit: int = 10, offset: int = 0
-    ) -> tuple[list[AreaInDB], int]:
-        """Retrieve all areas by company ID with pagination.
-
-        Args:
-            company_id: UUID of the company
-            limit: Maximum number of records to return (default: 10)
-            offset: Number of records to skip (default: 0)
-
-        Returns:
-            tuple: (list of AreaInDB objects, total count of areas)
-        """
-        logger.info(
-            "Fetching areas for company with pagination",
-            company_id=str(company_id),
-            limit=limit,
-            offset=offset,
-        )
-
-        areas, total_count = await self.area_repository.get_areas_by_company_id(
-            company_id=company_id,
-            limit=limit,
-            offset=offset,
-        )
-
-        logger.info(
-            "Areas fetched successfully",
-            company_id=str(company_id),
-            area_count=len(areas),
-            total_count=total_count,
-        )
-        return areas, total_count
-
-    async def get_areas_by_type(
-        self, company_id: UUID, type: AreaType, limit: int = 10, offset: int = 0
-    ) -> tuple[list[AreaInDB], int]:
-        """Retrieve all areas by type within a company with pagination.
-
-        Args:
-            company_id: UUID of the company
-            type: Area type to filter by
-            limit: Maximum number of records to return (default: 10)
-            offset: Number of records to skip (default: 0)
-
-        Returns:
-            tuple: (list of AreaInDB objects, total count of areas)
-
-        Raises:
-            ValueError: If validation fails
-        """
-        logger.info(
-            "Fetching areas by type with pagination",
-            type=type,
-            company_id=str(company_id),
-            limit=limit,
-            offset=offset,
-        )
-
-        areas, total_count = await self.area_repository.get_areas_by_type(
-            company_id=company_id,
-            type=type,
-            limit=limit,
-            offset=offset,
-        )
-
-        logger.info(
-            "Areas fetched by type successfully",
-            type=type,
-            company_id=str(company_id),
-            area_count=len(areas),
-            total_count=total_count,
-        )
-        return areas, total_count
-
-    async def get_areas_related_to(
+    async def list_areas(
         self,
-        company_id: UUID,
-        area_id: int,
-        area_type: AreaType,
-        required_type: AreaType | None = None,
-        limit: int = 10,
+        area_type: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        parent_id: Optional[int] = None,
+        parent_type: Optional[str] = None,
+        limit: int = 20,
         offset: int = 0,
-    ) -> tuple[list[AreaInDB], int]:
-        """Retrieve areas related to a given area based on hierarchy with pagination.
+    ) -> tuple[list[AreaListItem], int]:
+        """
+        List all areas with optional filtering and return total count.
 
         Args:
-            company_id: UUID of the company
-            area_id: ID of the reference area
-            area_type: Type of the reference area
-            required_type: Optional type to filter related areas
-            limit: Maximum number of records to return (default: 10)
-            offset: Number of records to skip (default: 0)
+            area_type: Filter by area type (NATION, ZONE, REGION, AREA, DIVISION)
+            is_active: Filter by active status
+            parent_id: Filter by parent area ID
+            parent_type: Filter by parent type (nation, zone, region, area)
+            limit: Maximum number of areas to return (default: 20, max: 100)
+            offset: Number of areas to skip (default: 0)
 
         Returns:
-            tuple: (list of AreaInDB objects, total count of related areas)
+            Tuple of (list of areas with minimal data, total count)
 
         Raises:
-            ValueError: If validation fails
+            AreaInvalidHierarchyException: If validation fails
+            AreaOperationException: If listing fails
         """
-        logger.info(
-            "Fetching areas related to given area with pagination",
-            area_id=area_id,
-            area_type=area_type,
-            required_type=required_type,
-            company_id=str(company_id),
-            limit=limit,
-            offset=offset,
-        )
+        try:
+            logger.debug(
+                "Listing areas",
+                area_type=area_type,
+                is_active=is_active,
+                parent_id=parent_id,
+                parent_type=parent_type,
+                limit=limit,
+                offset=offset,
+                company_id=str(self.company_id),
+            )
 
-        areas, total_count = await self.area_repository.get_areas_related_to(
-            company_id=company_id,
-            area_id=area_id,
-            area_type=area_type,
-            required_type=required_type,
-            limit=limit,
-            offset=offset,
-        )
+            # Validate pagination parameters
+            if limit < 1 or limit > 100:
+                raise AreaInvalidHierarchyException(
+                    message="Limit must be between 1 and 100"
+                )
 
-        logger.info(
-            "Related areas fetched successfully",
-            area_id=area_id,
-            area_type=area_type,
-            required_type=required_type,
-            company_id=str(company_id),
-            area_count=len(areas),
-            total_count=total_count,
-        )
-        return areas, total_count
+            if offset < 0:
+                raise AreaInvalidHierarchyException(
+                    message="Offset must be non-negative"
+                )
 
-    async def update_area(
-        self,
-        company_id: UUID,
-        id: int,
-        name: str | None = None,
-        type: AreaType | None = None,
-        area_id: int | None = None,
-        region_id: int | None = None,
-        zone_id: int | None = None,
-        nation_id: int | None = None,
-    ) -> AreaInDB:
-        """Update area details with validation.
+            # Validate area type if provided
+            if area_type is not None:
+                try:
+                    AreaType(area_type.upper())
+                except ValueError:
+                    raise AreaInvalidHierarchyException(
+                        message=f"Invalid area type: {area_type}. Must be one of: NATION, ZONE, REGION, AREA, DIVISION"
+                    )
+
+            # Validate parent_type if provided
+            if parent_type is not None and parent_type.lower() not in [
+                "nation",
+                "zone",
+                "region",
+                "area",
+            ]:
+                raise AreaInvalidHierarchyException(
+                    message=f"Invalid parent type: {parent_type}. Must be one of: nation, zone, region, area"
+                )
+
+            # Get areas and count in parallel for better performance
+            async with self.db_pool.acquire() as conn:
+                areas = await self.repository.list_areas(
+                    area_type=area_type,
+                    is_active=is_active,
+                    parent_id=parent_id,
+                    parent_type=parent_type,
+                    limit=limit,
+                    offset=offset,
+                    connection=conn,
+                )
+                total_count = await self.repository.count_areas(
+                    area_type=area_type,
+                    is_active=is_active,
+                    parent_id=parent_id,
+                    parent_type=parent_type,
+                    connection=conn,
+                )
+
+            logger.debug(
+                "Areas listed successfully",
+                count=len(areas),
+                total_count=total_count,
+                company_id=str(self.company_id),
+            )
+
+            return areas, total_count
+
+        except AreaInvalidHierarchyException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to list areas in service",
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def update_area(self, area_id: int, area_data: AreaUpdate) -> AreaResponse:
+        """
+        Update an existing area.
 
         Args:
-            company_id: UUID of the company
             area_id: ID of the area to update
-            name: New name (optional)
-            type: New type (optional)
-            area_id_parent: New parent area ID (optional)
-            region_id: New parent region ID (optional)
-            zone_id: New parent zone ID (optional)
-            nation_id: New parent nation ID (optional)
+            area_data: Area data to update
 
         Returns:
-            AreaInDB: Updated area object
+            Updated area
 
         Raises:
-            ValueError: If validation fails
             AreaNotFoundException: If area not found
-            AreaAlreadyExistsException: If name already exists
+            AreaInvalidHierarchyException: If validation fails
+            AreaOperationException: If update fails
         """
-        logger.info("Updating area", area_id=id, company_id=str(company_id))
-
-        if type == AreaType.DIVISION:
-            # At this point, model validation ensures area_id is not None
-            assert area_id is not None, (
-                "Model validation should ensure area_id is set for DIVISION"
-            )
-            parent_area = await self.area_repository.get_area_by_id(
-                company_id=company_id,
+        try:
+            logger.info(
+                "Updating area",
                 area_id=area_id,
+                company_id=str(self.company_id),
             )
-            if parent_area.type != AreaType.AREA:
-                raise InvalidAreaInputException(
-                    field="area_id",
-                    message="Division's parent area must be of type AREA",
+
+            # Validate at least one field is provided
+            if not any(
+                [
+                    area_data.name,
+                    area_data.type,
+                    area_data.area_id is not None,
+                    area_data.region_id is not None,
+                    area_data.zone_id is not None,
+                    area_data.nation_id is not None,
+                ]
+            ):
+                raise AreaInvalidHierarchyException(
+                    message="At least one field must be provided for update"
                 )
-            region_id = parent_area.region_id
-            zone_id = parent_area.zone_id
-            nation_id = parent_area.nation_id
 
-        elif type == AreaType.AREA:
-            # At this point, model validation ensures region_id is not None
-            assert region_id is not None, (
-                "Model validation should ensure region_id is set for AREA"
-            )
-            parent_area = await self.area_repository.get_area_by_id(
-                company_id=company_id,
-                area_id=region_id,
-            )
-            if parent_area.type != AreaType.REGION:
-                raise InvalidAreaInputException(
-                    field="region_id",
-                    message="Area's parent region must be of type REGION",
-                )
-            zone_id = parent_area.zone_id
-            nation_id = parent_area.nation_id
+            # Validate parent exists if being updated
+            if any(
+                [
+                    area_data.type is not None,
+                    area_data.area_id is not None,
+                    area_data.region_id is not None,
+                    area_data.zone_id is not None,
+                    area_data.nation_id is not None,
+                ]
+            ):
+                if area_data.type == AreaType.DIVISION.value:
+                    parent_area = await self.repository.get_area_by_id(area_data.area_id)
+                    if parent_area.type != AreaType.AREA.value:
+                        raise AreaInvalidHierarchyException(
+                            message="Division's parent area must be of type AREA",
+                        )
+                    area_data.region_id = parent_area.region_id
+                    area_data.zone_id = parent_area.zone_id
+                    area_data.nation_id = parent_area.nation_id
+                elif area_data.type == AreaType.AREA.value:
+                    parent_area = await self.repository.get_area_by_id(area_data.region_id)
+                    if parent_area.type != AreaType.REGION.value:
+                        raise AreaInvalidHierarchyException(
+                            message="Area's parent region must be of type REGION",
+                        )
+                    area_data.area_id = None
+                    area_data.zone_id = parent_area.zone_id
+                    area_data.nation_id = parent_area.nation_id
+                elif area_data.type == AreaType.REGION.value:
+                    parent_area = await self.repository.get_area_by_id(area_data.zone_id)
+                    if parent_area.type != AreaType.ZONE.value:
+                        raise AreaInvalidHierarchyException(
+                            message="Region's parent zone must be of type ZONE",
+                        )
+                    area_data.area_id = None
+                    area_data.region_id = None
+                    area_data.nation_id = parent_area.nation_id
+                elif area_data.type == AreaType.ZONE.value:
+                    parent_area = await self.repository.get_area_by_id(area_data.nation_id)
+                    if parent_area.type != AreaType.NATION.value:
+                        raise AreaInvalidHierarchyException(
+                            message="Zone's parent nation must be of type NATION",
+                        )
+                    area_data.area_id = None
+                    area_data.region_id = None
+                    area_data.zone_id = None
+                elif area_data.type == AreaType.NATION.value:
+                    area_data.area_id = None
+                    area_data.region_id = None
+                    area_data.zone_id = None
+                    area_data.nation_id = None
+                else:
+                    raise AreaInvalidHierarchyException(
+                        message="Invalid area type",
+                    )
 
-        elif type == AreaType.REGION:
-            # At this point, model validation ensures zone_id is not None
-            assert zone_id is not None, (
-                "Model validation should ensure zone_id is set for REGION"
-            )
-            parent_area = await self.area_repository.get_area_by_id(
-                company_id=company_id,
-                area_id=zone_id,
-            )
-            if parent_area.type != AreaType.ZONE:
-                raise InvalidAreaInputException(
-                    field="zone_id", message="Region's parent zone must be of type ZONE"
-                )
-            nation_id = parent_area.nation_id
+            # Update area using repository
+            area = await self.repository.update_area(area_id, area_data)
 
-        elif type == AreaType.ZONE:
-            # At this point, model validation ensures nation_id is not None
-            assert nation_id is not None, (
-                "Model validation should ensure nation_id is set for ZONE"
+            logger.info(
+                "Area updated successfully",
+                area_id=area_id,
+                company_id=str(self.company_id),
             )
-            parent_area = await self.area_repository.get_area_by_id(
-                company_id=company_id,
-                area_id=nation_id,
+
+            return AreaResponse(**area.model_dump())
+
+        except (AreaNotFoundException, AreaInvalidHierarchyException):
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to update area in service",
+                area_id=area_id,
+                error=str(e),
+                company_id=str(self.company_id),
             )
-            if parent_area.type != AreaType.NATION:
-                raise InvalidAreaInputException(
-                    field="nation_id",
-                    message="Zone's parent nation must be of type NATION",
-                )
-        # Update area through repository
-        area = await self.area_repository.update_area(
-            company_id=company_id,
-            area_id=id,
-            name=name,
-            type=type,
-            area_id_parent=area_id,
-            region_id=region_id,
-            zone_id=zone_id,
-            nation_id=nation_id,
-        )
+            raise
 
-        logger.info("Area updated successfully", area_id=id, company_id=str(company_id))
-        return area
-
-    async def delete_area(self, company_id: UUID, area_id: int) -> None:
-        """Delete an area from the database (soft delete).
+    async def delete_area(self, area_id: int) -> None:
+        """
+        Soft delete an area by setting is_active to False.
 
         Args:
-            company_id: UUID of the company
             area_id: ID of the area to delete
 
         Raises:
-            ValueError: If validation fails
             AreaNotFoundException: If area not found
+            AreaOperationException: If deletion fails
         """
-        logger.info("Deleting area", area_id=area_id, company_id=str(company_id))
+        try:
+            logger.info(
+                "Deleting area",
+                area_id=area_id,
+                company_id=str(self.company_id),
+            )
 
-        # Delete area through repository
-        await self.area_repository.delete_area(
-            company_id=company_id,
-            area_id=area_id,
-        )
+            # Soft delete area using repository
+            await self.repository.delete_area(area_id)
 
-        logger.info(
-            "Area deleted successfully", area_id=area_id, company_id=str(company_id)
-        )
+            logger.info(
+                "Area deleted successfully",
+                area_id=area_id,
+                company_id=str(self.company_id),
+            )
 
+        except AreaNotFoundException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to delete area in service",
+                area_id=area_id,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
 
-# Dependency to get area service
-async def get_area_service(
-    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
-) -> AreaService:
-    """Dependency to create and return AreaService instance."""
-    area_repository = AreaRepository(db)
-    return AreaService(area_repository)
+    async def get_areas_by_parent(
+        self, parent_id: int, parent_type: str
+    ) -> list[AreaResponse]:
+        """
+        Get all child areas of a parent area.
+
+        Args:
+            parent_id: ID of the parent area
+            parent_type: Type of parent (nation, zone, region, area)
+
+        Returns:
+            List of child areas
+
+        Raises:
+            AreaInvalidHierarchyException: If parent_type is invalid
+            AreaOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting areas by parent",
+                parent_id=parent_id,
+                parent_type=parent_type,
+                company_id=str(self.company_id),
+            )
+
+            # Validate parent_type
+            if parent_type.lower() not in ["nation", "zone", "region", "area"]:
+                raise AreaInvalidHierarchyException(
+                    message=f"Invalid parent type: {parent_type}. Must be one of: nation, zone, region, area"
+                )
+
+            areas = await self.repository.get_areas_by_parent(parent_id, parent_type)
+
+            return [AreaResponse(**area.model_dump()) for area in areas]
+
+        except AreaInvalidHierarchyException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get areas by parent in service",
+                parent_id=parent_id,
+                parent_type=parent_type,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def check_area_exists(self, area_id: int) -> bool:
+        """
+        Check if an area exists.
+
+        Args:
+            area_id: ID of the area to check
+
+        Returns:
+            True if area exists, False otherwise
+        """
+        try:
+            await self.repository.get_area_by_id(area_id)
+            return True
+        except AreaNotFoundException:
+            return False
+
+    async def check_area_exists_by_name_and_type(
+        self, name: str, area_type: str
+    ) -> bool:
+        """
+        Check if an area exists by name and type.
+
+        Args:
+            name: Name of the area
+            area_type: Type of the area
+
+        Returns:
+            True if area exists, False otherwise
+        """
+        try:
+            await self.repository.get_area_by_name_and_type(name, area_type)
+            return True
+        except AreaNotFoundException:
+            return False
+
+    async def get_active_areas_count(self, area_type: Optional[str] = None) -> int:
+        """
+        Get count of active areas, optionally filtered by type.
+
+        Args:
+            area_type: Optional filter by area type
+
+        Returns:
+            Count of active areas
+
+        Raises:
+            AreaOperationException: If counting fails
+        """
+        try:
+            logger.debug(
+                "Getting active areas count",
+                area_type=area_type,
+                company_id=str(self.company_id),
+            )
+
+            count = await self.repository.count_areas(
+                area_type=area_type, is_active=True
+            )
+
+            return count
+
+        except Exception as e:
+            logger.error(
+                "Failed to get active areas count in service",
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def get_nations(self) -> list[AreaListItem]:
+        """
+        Get all active nations (top-level areas).
+
+        Returns:
+            List of active nations
+
+        Raises:
+            AreaOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting all nations",
+                company_id=str(self.company_id),
+            )
+
+            nations = await self.repository.list_areas(
+                area_type=AreaType.NATION.value, is_active=True, limit=100
+            )
+
+            return nations
+
+        except Exception as e:
+            logger.error(
+                "Failed to get nations in service",
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def get_zones_by_nation(self, nation_id: int) -> list[AreaResponse]:
+        """
+        Get all zones under a specific nation.
+
+        Args:
+            nation_id: ID of the nation
+
+        Returns:
+            List of zones
+
+        Raises:
+            AreaOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting zones by nation",
+                nation_id=nation_id,
+                company_id=str(self.company_id),
+            )
+
+            zones = await self.repository.get_areas_by_parent(nation_id, "nation")
+
+            return [AreaResponse(**zone.model_dump()) for zone in zones]
+
+        except Exception as e:
+            logger.error(
+                "Failed to get zones by nation in service",
+                nation_id=nation_id,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def get_regions_by_zone(self, zone_id: int) -> list[AreaResponse]:
+        """
+        Get all regions under a specific zone.
+
+        Args:
+            zone_id: ID of the zone
+
+        Returns:
+            List of regions
+
+        Raises:
+            AreaOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting regions by zone",
+                zone_id=zone_id,
+                company_id=str(self.company_id),
+            )
+
+            regions = await self.repository.get_areas_by_parent(zone_id, "zone")
+
+            return [AreaResponse(**region.model_dump()) for region in regions]
+
+        except Exception as e:
+            logger.error(
+                "Failed to get regions by zone in service",
+                zone_id=zone_id,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def get_areas_by_region(self, region_id: int) -> list[AreaResponse]:
+        """
+        Get all areas under a specific region.
+
+        Args:
+            region_id: ID of the region
+
+        Returns:
+            List of areas
+
+        Raises:
+            AreaOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting areas by region",
+                region_id=region_id,
+                company_id=str(self.company_id),
+            )
+
+            areas = await self.repository.get_areas_by_parent(region_id, "region")
+
+            return [AreaResponse(**area.model_dump()) for area in areas]
+
+        except Exception as e:
+            logger.error(
+                "Failed to get areas by region in service",
+                region_id=region_id,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise
+
+    async def get_divisions_by_area(self, area_id: int) -> list[AreaResponse]:
+        """
+        Get all divisions under a specific area.
+
+        Args:
+            area_id: ID of the area
+
+        Returns:
+            List of divisions
+
+        Raises:
+            AreaOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting divisions by area",
+                area_id=area_id,
+                company_id=str(self.company_id),
+            )
+
+            divisions = await self.repository.get_areas_by_parent(area_id, "area")
+
+            return [AreaResponse(**division.model_dump()) for division in divisions]
+
+        except Exception as e:
+            logger.error(
+                "Failed to get divisions by area in service",
+                area_id=area_id,
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise

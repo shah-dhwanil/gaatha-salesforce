@@ -1,256 +1,533 @@
 """
-Role controller for FastAPI routes.
+Role controller/router for FastAPI endpoints.
 
-This module defines the API endpoints for role operations including
-CRUD operations and role management.
+This module defines all REST API endpoints for role management
+in a multi-tenant environment.
 """
 
-from uuid import UUID
-from fastapi import APIRouter, Depends, status
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Path, Query, status
+from fastapi.responses import Response
 import structlog
 
-from api.service.role import RoleService
-from api.dependencies.role import get_role_service
-from api.models.base import ResponseModel, ListResponseModel
-from api.models.role import (
-    CreateRoleRequest,
-    UpdateRoleRequest,
-    RoleResponse,
+from api.dependencies.role import RoleServiceDep
+from api.exceptions.role import (
+    RoleAlreadyExistsException,
+    RoleNotFoundException,
+    RoleOperationException,
+    RoleValidationException,
 )
+from api.models import ListResponseModel, ResponseModel
+from api.models.role import RoleCreate, RoleListItem, RoleResponse, RoleUpdate
 
 logger = structlog.get_logger(__name__)
 
-# Create router
-router = APIRouter(prefix="/roles", tags=["roles"])
+router = APIRouter(
+    prefix="/companies/{company_id}/roles",
+    tags=["Roles"],
+    responses={
+        400: {"description": "Bad Request - Invalid input"},
+        404: {"description": "Resource Not Found"},
+        500: {"description": "Internal Server Error"},
+    },
+)
 
 
 @router.post(
-    "/",
+    "",
     response_model=ResponseModel[RoleResponse],
     status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"description": "Role created successfully"},
+        400: {"description": "Validation error"},
+        409: {"description": "Role already exists"},
+    },
     summary="Create a new role",
-    description="Create a new role with the specified name, description, and permissions for a company.",
+    description="Create a new role with specified name, description, and permissions",
 )
 async def create_role(
-    request: CreateRoleRequest,
-    role_service: RoleService = Depends(get_role_service),
-) -> ResponseModel[RoleResponse]:
+    role_data: RoleCreate,
+    role_service: RoleServiceDep,
+):
     """
     Create a new role.
 
-    Args:
-        request: CreateRoleRequest with role details
-        role_service: Injected RoleService dependency
-
-    Returns:
-        RoleResponse with created role details
-
-    Raises:
-        HTTPException: 409 if role already exists
-        HTTPException: 400 if validation fails
+    - **name**: Unique role name (1-32 characters)
+    - **description**: Optional role description
+    - **permissions**: List of permission strings (max 64 chars each)
+    - **is_active**: Whether the role is active (default: true)
     """
-    logger.info(
-        "Creating new role", name=request.name, company_id=str(request.company_id)
-    )
+    try:
+        role = await role_service.create_role(role_data)
+        return ResponseModel(status_code=status.HTTP_201_CREATED, data=role)
 
-    role = await role_service.create_role(
-        company_id=request.company_id,
-        name=request.name,
-        description=request.description,
-        permissions=request.permissions,
-    )
-
-    return ResponseModel(
-        status_code=status.HTTP_201_CREATED,
-        data=RoleResponse(
-            name=role.name,
-            description=role.description,
-            permissions=role.permissions,
-            is_active=role.is_active,
-            created_at=role.created_at,
-            updated_at=role.updated_at,
-        ),
-    )
-
-
-@router.get(
-    "/{company_id}",
-    response_model=ListResponseModel[RoleResponse],
-    status_code=status.HTTP_200_OK,
-    summary="Get all roles for a company",
-    description="Retrieve all active roles for the specified company with pagination.",
-)
-async def get_roles_by_company(
-    company_id: UUID,
-    limit: int = 10,
-    offset: int = 0,
-    role_service: RoleService = Depends(get_role_service),
-) -> ListResponseModel[RoleResponse]:
-    """
-    Get all roles for a company with pagination.
-
-    Args:
-        company_id: UUID of the company
-        limit: Maximum number of records to return (default: 10)
-        offset: Number of records to skip (default: 0)
-        role_service: Injected RoleService dependency
-
-    Returns:
-        ListResponseModel with list of roles, pagination info, and total count
-    """
-    logger.info(
-        "Fetching roles for company",
-        company_id=str(company_id),
-        limit=limit,
-        offset=offset,
-    )
-
-    roles, total_count = await role_service.get_roles_by_company(
-        company_id, limit, offset
-    )
-
-    role_responses = [
-        RoleResponse(
-            name=role.name,
-            description=role.description,
-            permissions=role.permissions,
-            is_active=role.is_active,
-            created_at=role.created_at,
-            updated_at=role.updated_at,
+    except RoleAlreadyExistsException as e:
+        logger.warning(
+            "Role already exists",
+            role_name=role_data.name,
+            error=e.message,
         )
-        for role in roles
-    ]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=e.message,
+        )
 
-    return ListResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=role_responses,
-        records_per_page=len(role_responses),
-        total_count=total_count,
-    )
+    except RoleValidationException as e:
+        logger.warning(
+            "Role validation failed",
+            role_name=role_data.name,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to create role",
+            role_name=role_data.name,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create role",
+        )
 
 
 @router.get(
-    "/{company_id}/{name}",
+    "/{role_name}",
     response_model=ResponseModel[RoleResponse],
-    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"description": "Role retrieved successfully"},
+        404: {"description": "Role not found"},
+    },
     summary="Get role by name",
-    description="Retrieve a specific role by name for a company.",
+    description="Retrieve detailed information about a specific role",
 )
-async def get_role_by_name(
-    company_id: UUID,
-    name: str,
-    role_service: RoleService = Depends(get_role_service),
-) -> ResponseModel[RoleResponse]:
+async def get_role(
+    role_name: Annotated[str, Path(description="Name of the role to retrieve")],
+    role_service: RoleServiceDep,
+):
     """
     Get a role by name.
 
-    Args:
-        company_id: UUID of the company
-        name: Name of the role
-        role_service: Injected RoleService dependency
-
-    Returns:
-        RoleResponse with role details
-
-    Raises:
-        HTTPException: 404 if role not found
+    Returns complete role information including permissions and timestamps.
     """
-    logger.info("Fetching role by name", name=name, company_id=str(company_id))
+    try:
+        role = await role_service.get_role_by_name(role_name)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=role)
 
-    role = await role_service.get_role_by_name(company_id, name)
+    except RoleNotFoundException as e:
+        logger.info(
+            "Role not found",
+            role_name=role_name,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
 
-    return ResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=RoleResponse(
-            name=role.name,
-            description=role.description,
-            permissions=role.permissions,
-            is_active=role.is_active,
-            created_at=role.created_at,
-            updated_at=role.updated_at,
-        ),
-    )
+    except Exception as e:
+        logger.error(
+            "Failed to get role",
+            role_name=role_name,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve role",
+        )
+
+
+@router.get(
+    "",
+    response_model=ListResponseModel[RoleListItem],
+    responses={
+        200: {"description": "Roles retrieved successfully"},
+        400: {"description": "Invalid pagination parameters"},
+    },
+    summary="List all roles",
+    description="List all roles with pagination and optional filtering by active status",
+)
+async def list_roles(
+    role_service: RoleServiceDep,
+    is_active: Annotated[
+        bool | None,
+        Query(description="Filter by active status (true/false, optional)"),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(ge=1, le=100, description="Number of roles to return (1-100)"),
+    ] = 20,
+    offset: Annotated[
+        int,
+        Query(ge=0, description="Number of roles to skip (pagination)"),
+    ] = 0,
+):
+    """
+    List all roles with pagination.
+
+    Returns minimal role data (name, description, is_active) for performance.
+    Use the detail endpoint to get complete role information.
+
+    - **is_active**: Optional filter by active status
+    - **limit**: Number of results to return (default: 20, max: 100)
+    - **offset**: Number of results to skip (default: 0)
+    """
+    try:
+        roles, total_count = await role_service.list_roles(
+            is_active=is_active,
+            limit=limit,
+            offset=offset,
+        )
+
+        return ListResponseModel(
+            status_code=status.HTTP_200_OK,
+            data=roles,
+            records_per_page=limit,
+            total_count=total_count,
+        )
+
+    except RoleValidationException as e:
+        logger.warning(
+            "Invalid pagination parameters",
+            limit=limit,
+            offset=offset,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to list roles",
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list roles",
+        )
 
 
 @router.patch(
-    "/{company_id}/{name}",
+    "/{role_name}",
     response_model=ResponseModel[RoleResponse],
-    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"description": "Role updated successfully"},
+        400: {"description": "Validation error"},
+        404: {"description": "Role not found"},
+    },
     summary="Update a role",
-    description="Update an existing role's description and/or permissions.",
+    description="Update role description and/or permissions (cannot update is_active)",
 )
 async def update_role(
-    company_id: UUID,
-    name: str,
-    request: UpdateRoleRequest,
-    role_service: RoleService = Depends(get_role_service),
-) -> ResponseModel[RoleResponse]:
+    role_name: Annotated[str, Path(description="Name of the role to update")],
+    role_data: RoleUpdate,
+    role_service: RoleServiceDep,
+):
     """
-    Update a role.
+    Update an existing role.
 
-    Args:
-        request: UpdateRoleRequest with update details
-        role_service: Injected RoleService dependency
+    Only description and permissions can be updated.
+    Use delete endpoint to deactivate a role.
 
-    Returns:
-        RoleResponse with updated role details
-
-    Raises:
-        HTTPException: 404 if role not found
-        HTTPException: 400 if no fields provided for update
+    - **description**: Optional new description
+    - **permissions**: Optional new permissions list
     """
-    logger.info("Updating role", name=name, company_id=str(company_id))
+    try:
+        role = await role_service.update_role(role_name, role_data)
+        return ResponseModel(status_code=status.HTTP_200_OK, data=role)
 
-    # Validate at least one field is provided
-    if not request.has_updates():
-        role = await role_service.get_role_by_name(company_id, name)
-    else:
-        role = await role_service.update_role(
-            company_id=company_id,
-            name=name,
-            description=request.description,
-            permissions=request.permissions,
+    except RoleNotFoundException as e:
+        logger.info(
+            "Role not found for update",
+            role_name=role_name,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
         )
 
-    return ResponseModel(
-        status_code=status.HTTP_200_OK,
-        data=RoleResponse(
-            name=role.name,
-            description=role.description,
-            permissions=role.permissions,
-            is_active=role.is_active,
-            created_at=role.created_at,
-            updated_at=role.updated_at,
-        ),
-    )
+    except RoleValidationException as e:
+        logger.warning(
+            "Role update validation failed",
+            role_name=role_name,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to update role",
+            role_name=role_name,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update role",
+        )
 
 
 @router.delete(
-    "/{company_id}/{name}",
+    "/{role_name}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a role",
-    description="Soft delete a role by marking it as inactive.",
+    responses={
+        204: {"description": "Role deactivated successfully"},
+        400: {"description": "Validation error"},
+        404: {"description": "Role not found"},
+    },
+    summary="Delete a role (soft delete)",
+    description="Soft delete a role by setting is_active to false",
 )
 async def delete_role(
-    company_id: UUID,
-    name: str,
-    role_service: RoleService = Depends(get_role_service),
-) -> None:
+    role_name: Annotated[str, Path(description="Name of the role to delete")],
+    role_service: RoleServiceDep,
+):
     """
     Delete a role (soft delete).
 
-    Args:
-        request: DeleteRoleRequest with role identifier
-        role_service: Injected RoleService dependency
-
-    Returns:
-        RoleDeletedResponse with deletion confirmation
-
-    Raises:
-        HTTPException: 404 if role not found
+    Sets is_active to false instead of permanently deleting the role.
+    The role will still exist in the database but won't be active.
     """
-    logger.info("Deleting role", name=name, company_id=str(company_id))
+    try:
+        await role_service.delete_role(role_name)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    await role_service.delete_role(company_id, name)
+    except RoleNotFoundException as e:
+        logger.info(
+            "Role not found for deletion",
+            role_name=role_name,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=e.message,
+        )
 
-    return
+    except RoleValidationException as e:
+        logger.warning(
+            "Role deletion validation failed",
+            role_name=role_name,
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to delete role",
+            role_name=role_name,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete role",
+        )
+
+
+@router.post(
+    "/bulk",
+    response_model=ResponseModel[list[RoleResponse]],
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        201: {"description": "Roles created successfully"},
+        400: {"description": "Validation error"},
+        409: {"description": "One or more roles already exist"},
+    },
+    summary="Bulk create roles",
+    description="Create multiple roles in a single transaction",
+)
+async def bulk_create_roles(
+    roles_data: list[RoleCreate],
+    role_service: RoleServiceDep,
+):
+    """
+    Bulk create multiple roles.
+
+    All roles are created in a single transaction.
+    If any role fails, the entire operation is rolled back.
+
+    - **roles_data**: List of role objects to create
+    """
+    try:
+        roles = await role_service.bulk_create_roles(roles_data)
+        return ResponseModel(status_code=status.HTTP_201_CREATED, data=roles)
+
+    except RoleAlreadyExistsException as e:
+        logger.warning(
+            "Bulk create failed - roles already exist",
+            count=len(roles_data),
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=e.message,
+        )
+
+    except RoleValidationException as e:
+        logger.warning(
+            "Bulk create validation failed",
+            count=len(roles_data),
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=e.message,
+        )
+
+    except RoleOperationException as e:
+        logger.error(
+            "Bulk create operation failed",
+            count=len(roles_data),
+            error=e.message,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=e.message,
+        )
+
+    except Exception as e:
+        logger.error(
+            "Failed to bulk create roles",
+            count=len(roles_data),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to bulk create roles",
+        )
+
+
+# @router.get(
+#     "/count/active",
+#     response_model=ResponseModel[int],
+#     responses={
+#         200: {"description": "Active roles count retrieved successfully"},
+#     },
+#     summary="Get active roles count",
+#     description="Get the total count of active roles",
+# )
+# async def get_active_roles_count(
+#     role_service: RoleServiceDep,
+# ):
+#     """
+#     Get count of active roles.
+
+#     Returns the total number of roles where is_active=true.
+#     """
+#     try:
+#         count = await role_service.get_active_roles_count()
+#         return ResponseModel(status_code=status.HTTP_200_OK, data=count)
+
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get active roles count",
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get active roles count",
+#         )
+
+
+# @router.get(
+#     "/{role_name}/permissions",
+#     response_model=ResponseModel[list[str]],
+#     responses={
+#         200: {"description": "Permissions retrieved successfully"},
+#         404: {"description": "Role not found"},
+#     },
+#     summary="Get role permissions",
+#     description="Get list of permissions for a specific role",
+# )
+# async def get_role_permissions(
+#     role_name: Annotated[str, Path(description="Name of the role")],
+#     role_service: RoleServiceDep,
+# ):
+#     """
+#     Get permissions for a specific role.
+
+#     Returns only the permissions array for the specified role.
+#     """
+#     try:
+#         permissions = await role_service.get_role_permissions(role_name)
+#         return ResponseModel(status_code=status.HTTP_200_OK, data=permissions)
+
+#     except RoleNotFoundException as e:
+#         logger.info(
+#             "Role not found for permissions",
+#             role_name=role_name,
+#             error=e.message,
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail=e.message,
+#         )
+
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get role permissions",
+#             role_name=role_name,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get role permissions",
+#         )
+
+
+# @router.head(
+#     "/{role_name}",
+#     status_code=status.HTTP_200_OK,
+#     responses={
+#         200: {"description": "Role exists"},
+#         404: {"description": "Role not found"},
+#     },
+#     summary="Check if role exists",
+#     description="Check if a role exists without retrieving its data",
+# )
+# async def check_role_exists(
+#     role_name: Annotated[str, Path(description="Name of the role to check")],
+#     role_service: RoleServiceDep,
+# ):
+#     """
+#     Check if a role exists.
+
+#     Returns 200 if role exists, 404 if not found.
+#     No response body is returned (HEAD request).
+#     """
+#     try:
+#         exists = await role_service.check_role_exists(role_name)
+#         if exists:
+#             return Response(status_code=status.HTTP_200_OK)
+#         else:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail=f"Role '{role_name}' not found",
+#             )
+
+#     except HTTPException:
+#         raise
+
+#     except Exception as e:
+#         logger.error(
+#             "Failed to check role existence",
+#             role_name=role_name,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to check role existence",
+#         )
+

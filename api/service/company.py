@@ -1,383 +1,533 @@
 """
-Company service module for business logic.
+Service layer for Company entity operations.
 
-This service provides business logic layer for company operations,
-acting as an intermediary between API handlers and the company repository.
-It handles validation, business rules, and coordinates repository operations.
+This service provides business logic for companies, including schema creation
+and migration application for multi-tenant architecture.
 """
 
 import asyncio
-from api.repository.utils import get_schema_name
-from api.settings.settings import get_settings
-from api.migrations import MigrationManager
-from uuid import UUID
 from typing import Optional
+from uuid import UUID
+
+import asyncpg
 import structlog
 
-from api.repository.company import CompanyRepository
-from api.models.company import CompanyInDB
+from api.database import DatabasePool
 from api.exceptions.company import (
+    CompanyAlreadyExistsException,
     CompanyNotFoundException,
+    CompanyOperationException,
+    CompanyValidationException,
 )
+from api.migrations import MigrationManager
+from api.models.company import (
+    CompanyCreate,
+    CompanyInDB,
+    CompanyListItem,
+    CompanyResponse,
+    CompanyUpdate,
+)
+from api.repository.company import CompanyRepository
+from api.repository.utils import get_schema_name
+from api.settings.database import DatabaseConfig
 
 logger = structlog.get_logger(__name__)
 
 
 class CompanyService:
-    """Service class for company business logic.
+    """
+    Service for managing Company business logic.
 
-    This service handles business logic and validation for company operations,
-    coordinating between the API layer and the CompanyRepository.
-
-    Attributes:
-        company_repository: Repository for company data operations
+    This service handles business logic, validation, orchestration,
+    schema creation, and migration application for company operations.
     """
 
-    def __init__(self, company_repository: CompanyRepository):
-        """Initialize the CompanyService with a repository.
+    def __init__(self, db_pool: DatabasePool, db_config: DatabaseConfig) -> None:
+        """
+        Initialize the CompanyService.
 
         Args:
-            company_repository: CompanyRepository instance for data operations
+            db_pool: Database pool instance for connection management
+            db_config: Database configuration for migrations
         """
-        self.company_repository = company_repository
+        self.db_pool = db_pool
+        self.db_config = db_config
+        self.repository = CompanyRepository(db_pool)
         logger.debug("CompanyService initialized")
 
-    async def create_company(
-        self,
-        name: str,
-        gst_no: str,
-        cin_no: str,
-        address: str,
-    ) -> CompanyInDB:
-        """Create a new company with validation.
-
-        Validates input data and creates a new company through the repository.
+    async def _create_schema(
+        self, schema_name: str, connection: asyncpg.Connection
+    ) -> None:
+        """
+        Create a new schema for the company.
 
         Args:
-            name: Name of the company
-            gst_no: GST number (required, must be 15 characters)
-            cin_no: CIN number (required, must be 21 characters)
-            address: Company address (required)
-
-        Returns:
-            CompanyInDB: Created company object with all details
+            schema_name: Name of the schema to create
+            connection: Database connection
 
         Raises:
-            CompanyAlreadyExistsException: If GST or CIN number already exists
-            ValueError: If validation fails
+            CompanyOperationException: If schema creation fails
         """
-        logger.info(
-            "Creating company",
-            name=name,
-            gst_no=gst_no,
-            cin_no=cin_no,
-        )
+        try:
+            logger.info("Creating schema", schema_name=schema_name)
+            
+            # Create schema
+            await connection.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
+            
+            logger.info("Schema created successfully", schema_name=schema_name)
 
-        # Validate input data
-        if not name or not name.strip():
-            raise ValueError("Company name cannot be empty")
-
-        if not gst_no or not gst_no.strip():
-            raise ValueError("GST number cannot be empty")
-
-        if not cin_no or not cin_no.strip():
-            raise ValueError("CIN number cannot be empty")
-
-        if not address or not address.strip():
-            raise ValueError("Address cannot be empty")
-
-        # Validate GST number format
-        gst_no_stripped = gst_no.strip()
-        if len(gst_no_stripped) != 15:
-            raise ValueError("GST number must be exactly 15 characters")
-
-        # Validate CIN number format
-        cin_no_stripped = cin_no.strip()
-        if len(cin_no_stripped) != 21:
-            raise ValueError("CIN number must be exactly 21 characters")
-
-        # Strip address
-        address_stripped = address.strip()
-        async with self.company_repository.db_pool.transaction() as conn:
-            # Create company through repository
-            company = await self.company_repository.create_company(
-                name=name.strip(),
-                gst_no=gst_no_stripped,
-                cin_no=cin_no_stripped,
-                address=address_stripped,
-                connection=conn,
+        except Exception as e:
+            logger.error(
+                "Failed to create schema",
+                schema_name=schema_name,
+                error=str(e),
             )
-            await self.company_repository.create_company_schema(
-                company.id, connection=conn
-            )
-        await asyncio.to_thread(
-            MigrationManager.apply_company_migrations,
-            get_settings().POSTGRES,
-            get_schema_name(company.id),
-        )
-        logger.info(
-            "Company created successfully", company_id=str(company.id), name=name
-        )
-        return company
+            raise CompanyOperationException(
+                message=f"Failed to create schema: {str(e)}",
+                operation="create_schema",
+            ) from e
 
-    async def get_company_by_id(self, company_id: UUID) -> CompanyInDB:
-        """Retrieve a company by ID.
+    def _apply_migrations(self, schema_name: str) -> None:
+        """
+        Apply migrations to the newly created schema.
+
+        Args:
+            schema_name: Name of the schema to apply migrations to
+
+        Raises:
+            CompanyOperationException: If migration application fails
+        """
+        try:
+            logger.info("Applying migrations to schema", schema_name=schema_name)
+
+            # Apply company-specific migrations
+            MigrationManager.apply_company_migrations(
+                config=self.db_config,
+                schema_name=schema_name,
+            )
+
+            logger.info(
+                "Migrations applied successfully",
+                schema_name=schema_name,
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to apply migrations",
+                schema_name=schema_name,
+                error=str(e),
+            )
+            raise CompanyOperationException(
+                message=f"Failed to apply migrations: {str(e)}",
+                operation="apply_migrations",
+            ) from e
+
+    async def create_company(self, company_data: CompanyCreate) -> CompanyResponse:
+        """
+        Create a new company with schema and migrations.
+
+        This method:
+        1. Creates the company record in the salesforce schema
+        2. Creates a dedicated schema for the company
+        3. Applies all migrations to the new schema
+
+        Args:
+            company_data: Company data to create
+
+        Returns:
+            Created company
+
+        Raises:
+            CompanyAlreadyExistsException: If company with same GST/CIN exists
+            CompanyValidationException: If validation fails
+            CompanyOperationException: If creation fails
+        """
+        company: Optional[CompanyInDB] = None
+        schema_name: Optional[str] = None
+
+        try:
+            logger.info(
+                "Creating company with schema",
+                company_name=company_data.name,
+                gst_no=company_data.gst_no,
+            )
+
+            # Use transaction for company creation and schema creation
+            async with self.db_pool.transaction() as conn:
+                # 1. Create company record
+                company = await self.repository.create_company(company_data, conn)
+                schema_name = get_schema_name(company.id)
+
+                # 2. Create schema for the company
+                await self._create_schema(schema_name, conn)
+
+            # 3. Apply migrations (outside transaction as yoyo manages its own)
+            await asyncio.to_thread(self._apply_migrations, schema_name)
+
+            logger.info(
+                "Company created successfully with schema and migrations",
+                company_id=str(company.id),
+                company_name=company.name,
+                schema_name=schema_name,
+            )
+
+            return CompanyResponse(**company.model_dump())
+
+        except CompanyAlreadyExistsException:
+            logger.warning(
+                "Company already exists",
+                gst_no=company_data.gst_no,
+                cin_no=company_data.cin_no,
+            )
+            raise
+        except CompanyValidationException:
+            raise
+        except CompanyOperationException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to create company in service",
+                company_name=company_data.name,
+                error=str(e),
+            )
+            
+            # Attempt cleanup if company was created but migrations failed
+            if company and schema_name:
+                try:
+                    logger.warning(
+                        "Attempting to cleanup after failed company creation",
+                        company_id=str(company.id),
+                        schema_name=schema_name,
+                    )
+                    async with self.db_pool.acquire() as conn:
+                        # Drop schema if it was created
+                        await conn.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+                    logger.info("Cleanup completed successfully")
+                except Exception as cleanup_error:
+                    logger.error(
+                        "Failed to cleanup after error",
+                        error=str(cleanup_error),
+                    )
+            
+            raise CompanyOperationException(
+                message=f"Failed to create company: {str(e)}",
+                operation="create",
+            ) from e
+
+    async def get_company_by_id(self, company_id: UUID) -> CompanyResponse:
+        """
+        Get a company by ID.
 
         Args:
             company_id: UUID of the company
 
         Returns:
-            CompanyInDB: Company object with complete details
+            Company
 
         Raises:
             CompanyNotFoundException: If company not found
+            CompanyOperationException: If retrieval fails
         """
-        logger.info("Fetching company by ID", company_id=str(company_id))
+        try:
+            logger.debug("Getting company by id", company_id=str(company_id))
 
-        company = await self.company_repository.get_company_by_id(company_id)
+            company = await self.repository.get_company_by_id(company_id)
 
-        logger.info("Company retrieved by ID", company_id=str(company_id))
-        return company
+            return CompanyResponse(**company.model_dump())
 
-    async def get_company_by_gst_no(self, gst_no: str) -> CompanyInDB:
-        """Retrieve a company by GST number.
+        except CompanyNotFoundException:
+            logger.warning("Company not found", company_id=str(company_id))
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get company in service",
+                company_id=str(company_id),
+                error=str(e),
+            )
+            raise
+
+    async def get_company_by_gst(self, gst_no: str) -> CompanyResponse:
+        """
+        Get a company by GST number.
 
         Args:
-            gst_no: GST number to search for
+            gst_no: GST number of the company
 
         Returns:
-            CompanyInDB: Company object with complete details
+            Company
 
         Raises:
             CompanyNotFoundException: If company not found
-            ValueError: If GST number is empty
+            CompanyOperationException: If retrieval fails
         """
-        logger.info("Fetching company by GST number", gst_no=gst_no)
+        try:
+            logger.debug("Getting company by GST", gst_no=gst_no)
 
-        if not gst_no or not gst_no.strip():
-            raise ValueError("GST number cannot be empty")
+            company = await self.repository.get_company_by_gst(gst_no)
 
-        company = await self.company_repository.get_company_by_gst_no(gst_no.strip())
+            return CompanyResponse(**company.model_dump())
 
-        logger.info(
-            "Company retrieved by GST number", company_id=str(company.id), gst_no=gst_no
-        )
-        return company
+        except CompanyNotFoundException:
+            logger.warning("Company not found", gst_no=gst_no)
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get company by GST in service",
+                gst_no=gst_no,
+                error=str(e),
+            )
+            raise
 
-    async def get_company_by_cin_no(self, cin_no: str) -> CompanyInDB:
-        """Retrieve a company by CIN number.
+    async def get_company_by_cin(self, cin_no: str) -> CompanyResponse:
+        """
+        Get a company by CIN number.
 
         Args:
-            cin_no: CIN number to search for
+            cin_no: CIN number of the company
 
         Returns:
-            CompanyInDB: Company object with complete details
+            Company
 
         Raises:
             CompanyNotFoundException: If company not found
-            ValueError: If CIN number is empty
+            CompanyOperationException: If retrieval fails
         """
-        logger.info("Fetching company by CIN number", cin_no=cin_no)
+        try:
+            logger.debug("Getting company by CIN", cin_no=cin_no)
 
-        if not cin_no or not cin_no.strip():
-            raise ValueError("CIN number cannot be empty")
+            company = await self.repository.get_company_by_cin(cin_no)
 
-        company = await self.company_repository.get_company_by_cin_no(cin_no.strip())
+            return CompanyResponse(**company.model_dump())
 
-        logger.info(
-            "Company retrieved by CIN number", company_id=str(company.id), cin_no=cin_no
-        )
-        return company
+        except CompanyNotFoundException:
+            logger.warning("Company not found", cin_no=cin_no)
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get company by CIN in service",
+                cin_no=cin_no,
+                error=str(e),
+            )
+            raise
 
-    async def get_all_companies(self) -> list[CompanyInDB]:
-        """Retrieve all active companies.
+    async def list_companies(
+        self,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[CompanyListItem], int]:
+        """
+        List all companies with optional filtering and return total count.
+
+        Args:
+            is_active: Filter by active status
+            limit: Maximum number of companies to return (default: 20)
+            offset: Number of companies to skip (default: 0)
 
         Returns:
-            list[CompanyInDB]: List of all active companies
+            Tuple of (list of companies with minimal data, total count)
+
+        Raises:
+            CompanyValidationException: If validation fails
+            CompanyOperationException: If listing fails
         """
-        logger.info("Fetching all companies")
+        try:
+            logger.debug(
+                "Listing companies",
+                is_active=is_active,
+                limit=limit,
+                offset=offset,
+            )
 
-        companies = await self.company_repository.get_all_companies()
+            # Validate pagination parameters
+            if limit < 1 or limit > 100:
+                raise CompanyValidationException(
+                    message="Limit must be between 1 and 100",
+                    field="limit",
+                    value=limit,
+                )
 
-        logger.info(
-            "Companies retrieved",
-            company_count=len(companies),
-        )
-        return companies
+            if offset < 0:
+                raise CompanyValidationException(
+                    message="Offset must be non-negative",
+                    field="offset",
+                    value=offset,
+                )
+
+            # Get companies and count in parallel for better performance
+            async with self.db_pool.acquire() as conn:
+                companies = await self.repository.list_companies(
+                    is_active=is_active,
+                    limit=limit,
+                    offset=offset,
+                    connection=conn,
+                )
+                total_count = await self.repository.count_companies(
+                    is_active=is_active,
+                    connection=conn,
+                )
+
+            logger.debug(
+                "Companies listed successfully",
+                count=len(companies),
+                total_count=total_count,
+            )
+
+            return companies, total_count
+
+        except CompanyValidationException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to list companies in service",
+                error=str(e),
+            )
+            raise
 
     async def update_company(
-        self,
-        company_id: UUID,
-        name: Optional[str] = None,
-        gst_no: Optional[str] = None,
-        cin_no: Optional[str] = None,
-        address: Optional[str] = None,
-    ) -> CompanyInDB:
-        """Update company details with validation.
+        self, company_id: UUID, company_data: CompanyUpdate
+    ) -> CompanyResponse:
+        """
+        Update an existing company.
+
+        Note: GST and CIN numbers cannot be updated.
 
         Args:
             company_id: UUID of the company to update
-            name: New name (optional)
-            gst_no: New GST number (optional)
-            cin_no: New CIN number (optional)
-            address: New address (optional)
+            company_data: Company data to update
 
         Returns:
-            CompanyInDB: Updated company object
+            Updated company
 
         Raises:
             CompanyNotFoundException: If company not found
-            CompanyAlreadyExistsException: If GST or CIN already exists
-            ValueError: If no fields provided or validation fails
+            CompanyValidationException: If validation fails
+            CompanyOperationException: If update fails
         """
-        logger.info(
-            "Updating company",
-            company_id=str(company_id),
-        )
+        try:
+            logger.info(
+                "Updating company",
+                company_id=str(company_id),
+            )
 
-        # Validate at least one field is provided
-        if name is None and gst_no is None and cin_no is None and address is None:
-            raise ValueError("At least one field must be provided for update")
+            # Additional business logic validation
+            if not company_data.name and not company_data.address:
+                raise CompanyValidationException(
+                    message="At least one field must be provided for update",
+                )
 
-        # Validate non-empty strings
-        if name is not None and not name.strip():
-            raise ValueError("Company name cannot be empty")
+            # Update company using repository
+            company = await self.repository.update_company(company_id, company_data)
 
-        # Validate GST number format if provided
-        if gst_no is not None:
-            gst_no_stripped = gst_no.strip()
-            if len(gst_no_stripped) != 15:
-                raise ValueError("GST number must be exactly 15 characters")
-        else:
-            gst_no_stripped = None
+            logger.info(
+                "Company updated successfully",
+                company_id=str(company_id),
+            )
 
-        # Validate CIN number format if provided
-        if cin_no is not None:
-            cin_no_stripped = cin_no.strip()
-            if len(cin_no_stripped) != 21:
-                raise ValueError("CIN number must be exactly 21 characters")
-        else:
-            cin_no_stripped = None
+            return CompanyResponse(**company.model_dump())
 
-        # Strip whitespace from string fields
-        name_stripped = name.strip() if name is not None else None
-        address_stripped = address.strip() if address is not None else None
-
-        company = await self.company_repository.update_company(
-            company_id=company_id,
-            name=name_stripped,
-            gst_no=gst_no_stripped,
-            cin_no=cin_no_stripped,
-            address=address_stripped,
-        )
-
-        logger.info("Company updated successfully", company_id=str(company_id))
-        return company
+        except (CompanyNotFoundException, CompanyValidationException):
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to update company in service",
+                company_id=str(company_id),
+                error=str(e),
+            )
+            raise
 
     async def delete_company(self, company_id: UUID) -> None:
-        """Soft delete a company.
+        """
+        Soft delete a company by setting is_active to False.
 
-        Marks the company as inactive rather than permanently deleting.
+        Note: This does NOT drop the schema. The schema remains for data retention.
 
         Args:
             company_id: UUID of the company to delete
 
         Raises:
             CompanyNotFoundException: If company not found
+            CompanyOperationException: If deletion fails
         """
-        logger.info(
-            "Deleting company",
-            company_id=str(company_id),
-        )
+        try:
+            logger.info(
+                "Soft deleting company",
+                company_id=str(company_id),
+            )
 
-        await self.company_repository.delete_company(company_id)
+            # Soft delete company using repository
+            await self.repository.delete_company(company_id)
 
-        logger.info("Company deleted successfully", company_id=str(company_id))
+            logger.info(
+                "Company soft deleted successfully (schema retained)",
+                company_id=str(company_id),
+            )
 
-    async def check_company_exists_by_id(self, company_id: UUID) -> bool:
-        """Check if a company exists by ID.
+        except CompanyNotFoundException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to soft delete company in service",
+                company_id=str(company_id),
+                error=str(e),
+            )
+            raise
 
-        Useful for validation before attempting operations.
+    async def check_company_exists(self, company_id: UUID) -> bool:
+        """
+        Check if a company exists.
 
         Args:
-            company_id: Company UUID to check
+            company_id: UUID of the company to check
 
         Returns:
-            bool: True if company exists, False otherwise
+            True if company exists, False otherwise
         """
-        logger.debug("Checking if company exists by ID", company_id=str(company_id))
-
         try:
-            await self.company_repository.get_company_by_id(company_id)
-            logger.debug("Company exists", company_id=str(company_id))
+            await self.repository.get_company_by_id(company_id)
             return True
         except CompanyNotFoundException:
-            logger.debug("Company does not exist", company_id=str(company_id))
             return False
 
-    async def check_company_exists_by_gst(self, gst_no: str) -> bool:
-        """Check if a company exists by GST number.
+    async def get_active_companies_count(self) -> int:
+        """
+        Get count of active companies.
 
-        Useful for validation before attempting operations.
+        Returns:
+            Count of active companies
+
+        Raises:
+            CompanyOperationException: If counting fails
+        """
+        try:
+            logger.debug("Getting active companies count")
+
+            count = await self.repository.count_companies(is_active=True)
+
+            return count
+
+        except Exception as e:
+            logger.error(
+                "Failed to get active companies count in service",
+                error=str(e),
+            )
+            raise
+
+    async def get_company_schema_name(self, company_id: UUID) -> str:
+        """
+        Get the schema name for a company.
 
         Args:
-            gst_no: GST number to check
+            company_id: UUID of the company
 
         Returns:
-            bool: True if company exists, False otherwise
+            Schema name
+
+        Raises:
+            CompanyNotFoundException: If company not found
         """
-        logger.debug("Checking if company exists by GST", gst_no=gst_no)
+        # Verify company exists
+        await self.get_company_by_id(company_id)
+        
+        return get_schema_name(company_id)
 
-        if not gst_no or not gst_no.strip():
-            return False
-
-        try:
-            await self.company_repository.get_company_by_gst_no(gst_no.strip())
-            logger.debug("Company exists with GST number", gst_no=gst_no)
-            return True
-        except CompanyNotFoundException:
-            logger.debug("Company does not exist with GST number", gst_no=gst_no)
-            return False
-
-    async def check_company_exists_by_cin(self, cin_no: str) -> bool:
-        """Check if a company exists by CIN number.
-
-        Useful for validation before attempting operations.
-
-        Args:
-            cin_no: CIN number to check
-
-        Returns:
-            bool: True if company exists, False otherwise
-        """
-        logger.debug("Checking if company exists by CIN", cin_no=cin_no)
-
-        if not cin_no or not cin_no.strip():
-            return False
-
-        try:
-            await self.company_repository.get_company_by_cin_no(cin_no.strip())
-            logger.debug("Company exists with CIN number", cin_no=cin_no)
-            return True
-        except CompanyNotFoundException:
-            logger.debug("Company does not exist with CIN number", cin_no=cin_no)
-            return False
-
-    async def get_active_companies(self) -> list[CompanyInDB]:
-        """Retrieve only active companies.
-
-        This is an alias for get_all_companies since the repository
-        already filters for active companies.
-
-        Returns:
-            list[CompanyInDB]: List of active companies
-        """
-        logger.info("Fetching active companies")
-
-        companies = await self.company_repository.get_all_companies()
-
-        logger.info(
-            "Active companies retrieved",
-            company_count=len(companies),
-        )
-        return companies

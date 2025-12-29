@@ -1,15 +1,23 @@
-# Dependency to get user service
-from api.repository.user import UserRepository
-from api.service.user import UserService
-from api.database import get_db_pool
-from fastapi.param_functions import Depends
-from api.database import DatabasePool
 from typing import Annotated
+from fastapi import Depends
+from api.service.user import UserService
+from api.dependencies.common import DatabasePoolDep
 
 
 async def get_user_service(
-    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
+    db_pool: DatabasePoolDep,
 ) -> UserService:
-    """Dependency to create and return UserService instance."""
-    user_repository = UserRepository(db)
-    return UserService(user_repository)
+    """
+    Dependency to get UserService instance.
+
+    Args:
+        db_pool: Database pool from dependency
+
+    Returns:
+        UserService instance
+    """
+    return UserService(db_pool)
+
+
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+

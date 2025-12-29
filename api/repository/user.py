@@ -1,78 +1,33 @@
-from uuid import UUID
-from api.database import DatabasePool
 from typing import Optional
-from asyncpg import Connection, UniqueViolationError, ForeignKeyViolationError
+from uuid import UUID
+
 from uuid_utils.compat import uuid7
-from api.exceptions.users import UserAlreadyExistsException, UserNotFoundException
-from api.exceptions.company import CompanyNotFoundException
+from api.database import DatabasePool
 from api.exceptions.area import AreaNotFoundException
+from api.exceptions.company import CompanyNotFoundException
 from api.exceptions.role import RoleNotFoundException
-from api.models.users import UserInDB
-from api.repository.utils import get_schema_name, set_search_path
+from api.exceptions.user import UserAlreadyExistsException, UserException, UserNotFoundException
+from api.models.user import BannkDetails, UserCreate, UserDetailsResponse, UserInDB, UserListResponse, UserUpdate
+from asyncpg import Connection, UniqueViolationError, ForeignKeyViolationError
 import structlog
 
+from api.repository.utils import get_schema_name, set_search_path
 logger = structlog.get_logger(__name__)
 
-
-# 019b368a7f187fd19501ae8814b5c588
 class UserRepository:
-    """Repository for managing user data across salesforce and company-specific schemas.
-
-    This repository handles user operations in a multi-tenant architecture where:
-    - User basic info is stored in the 'salesforce' schema
-    - User membership details are stored in company-specific schemas (named by company_id)
-
-    Attributes:
-        db_pool: Database connection pool for executing queries
-    """
-
     def __init__(self, db_pool: DatabasePool):
-        """Initialize the UserRepository with a database pool.
-
-        Args:
-            db_pool: DatabasePool instance for managing database connections
-        """
         self.db_pool = db_pool
-        logger.debug("UserRepository initialized")
 
-    async def __create_user(
-        self,
-        connection: Connection,
-        username: str,
-        name: str,
-        contact_no: str,
-        company_id: UUID,
-        role: str,
-        area_id: Optional[int] = None,
-    ) -> UserInDB:
-        """Create a new user in the database.
-
-        Creates user records in both:
-        1. salesforce.users table (basic user info)
-        2. <company_id>.members table (company-specific membership info)
-
-        Args:
-            connection: Database connection
-            username: Unique username for the user
-            name: Full name of the user
-            contact_no: Contact phone number
-            company_id: UUID of the company the user belongs to
-            role: Role of the user in the company
-            area_id: Optional area assignment for the user
-
-        Returns:
-            UserInDB: Created user object with all details
-
-        Raises:
-            UserAlreadyExistsError: If username already exists
-        """
+    async def __create_normal_user(self, connection: Connection, user: UserCreate) -> UserInDB:
+        """Create a new normal user in the database."""
         uid = uuid7()
         logger.debug(
             "Creating new user",
             user_id=str(uid),
-            username=username,
-            company_id=str(company_id),
-            role=role,
+            username=user.username,
+            company_id=str(user.company_id),
+            role=user.role,
+            area_id=user.area_id,
         )
 
         query1 = """
@@ -80,27 +35,27 @@ class UserRepository:
         RETURNING *;
         """
         query2 = """
-        INSERT INTO members (id, role, area_id) VALUES ($1, $2, $3)
+        INSERT INTO members (id, role, area_id, bank_details) VALUES ($1, $2, $3, $4)
         RETURNING *;
         """
         try:
             await set_search_path(connection, "salesforce")
             rs1 = await connection.fetchrow(
-                query1, uid, username, name, contact_no, company_id
+                query1, uid, user.username, user.name, user.contact_no, user.company_id
             )
             logger.debug("User record created in salesforce schema", user_id=str(uid))
 
-            await set_search_path(connection, get_schema_name(company_id))
-            rs2 = await connection.fetchrow(query2, uid, role, area_id)
+            await set_search_path(connection, get_schema_name(user.company_id))
+            rs2 = await connection.fetchrow(query2, uid, user.role, user.area_id, user.bank_details.model_dump_json())
             logger.debug(
                 "Member record created in company schema",
                 user_id=str(uid),
-                schema=get_schema_name(company_id),
+                schema=get_schema_name(user.company_id),
             )
         except UniqueViolationError as e:
             logger.error(
                 "User creation failed - username already exists",
-                username=username,
+                username=user.username,
                 error=str(e),
             )
             raise UserAlreadyExistsException(
@@ -109,9 +64,9 @@ class UserRepository:
         except ForeignKeyViolationError as e:
             logger.error(
                 "User creation failed - foreign key violation",
-                username=username,
-                company_id=str(company_id),
-                area_id=area_id,
+                username=user.username,
+                company_id=str(user.company_id),
+                area_id=user.area_id,
                 error=str(e),
             )
             # Determine which foreign key failed
@@ -119,15 +74,15 @@ class UserRepository:
             if "company" in error_msg:
                 raise CompanyNotFoundException(
                     field="company_id",
-                    message=f"Company with id {company_id} does not exist.",
+                    message=f"Company with id {user.company_id} does not exist.",
                 ) from e
             elif "role" in error_msg:
                 raise RoleNotFoundException(
-                    field="role", message=f"Role '{role}' does not exist."
+                    field="role", message=f"Role '{user.role}' does not exist."
                 ) from e
             elif "area" in error_msg:
                 raise AreaNotFoundException(
-                    field="area_id", message=f"Area with id {area_id} does not exist."
+                    field="area_id", message=f"Area with id {user.area_id} does not exist."
                 ) from e
             else:
                 raise UserNotFoundException(
@@ -136,10 +91,11 @@ class UserRepository:
         if not rs1 or not rs2:
             logger.error(
                 "User creation failed - incomplete records",
-                username=username,
+                username=user.username,
             )
-            raise Exception("Failed to create user record.")
-        logger.info("User created successfully", user_id=str(uid), username=username)
+            raise UserException(message="Failed to create user record.")
+        logger.info("User created successfully", user_id=str(uid), username=user.username)
+        print("Bank details:", rs2["bank_details"])
         return UserInDB(
             id=rs1["id"],
             username=rs1["username"],
@@ -151,46 +107,24 @@ class UserRepository:
             is_super_admin=rs1["is_super_admin"],
             is_active=rs1["is_active"],
             created_at=rs2["created_at"],
+            bank_details=BannkDetails.model_validate_json(rs2["bank_details"]),
             updated_at=rs2["updated_at"],
         )
-
-    async def __create_super_admin(
-        self,
-        connection: Connection,
-        username: str,
-        name: str,
-        contact_no: str,
-    ) -> UserInDB:
-        """Create a new super admin user in the database.
-
-        Creates user record in:
-        1. salesforce.users table (basic user info)
-
-        Args:
-            connection: Database connection
-            username: Unique username for the super admin
-            name: Full name of the super admin
-            contact_no: Contact phone number
-
-        Returns:
-            UserInDB: Created super admin user object with all details
-        Raises:
-            UserAlreadyExistsError: If username already exists
-        """
+    async def __create_super_admin(self, connection: Connection, user: UserCreate) -> UserInDB:
+        """Create a new super admin user in the database."""
         uid = uuid7()
         logger.debug(
             "Creating new super admin user",
             user_id=str(uid),
-            username=username,
+            username=user.username,
         )
-
         query1 = """
         INSERT INTO users (id, username, name, contact_no,is_super_admin) VALUES ($1, $2, $3, $4,TRUE)
         RETURNING *;
         """
         try:
             await set_search_path(connection, "salesforce")
-            rs1 = await connection.fetchrow(query1, uid, username, name, contact_no)
+            rs1 = await connection.fetchrow(query1, uid, user.username, user.name, user.contact_no)
             logger.debug(
                 "Super admin user record created in salesforce schema", user_id=str(uid)
             )
@@ -198,7 +132,7 @@ class UserRepository:
         except UniqueViolationError as e:
             logger.error(
                 "Super admin user creation failed - username already exists",
-                username=username,
+                username=user.username,
                 error=str(e),
             )
             raise UserAlreadyExistsException(
@@ -208,11 +142,11 @@ class UserRepository:
         if not rs1:
             logger.error(
                 "Super admin user creation failed - incomplete records",
-                username=username,
+                username=user.username,
             )
             raise Exception("Failed to create super admin user record.")
         logger.info(
-            "Super admin user created successfully", user_id=str(uid), username=username
+            "Super admin user created successfully", user_id=str(uid), username=user.username
         )
         return UserInDB(
             id=rs1["id"],
@@ -223,338 +157,206 @@ class UserRepository:
             role="SUPER_ADMIN",
             area_id=None,
             is_super_admin=rs1["is_super_admin"],
+            bank_details=None,
             is_active=rs1["is_active"],
             created_at=rs1["created_at"],
             updated_at=rs1["updated_at"],
         )
+    async def create_user(self, user: UserCreate, connection: Optional[Connection] = None) -> UserInDB:
+        """Create a new user in the database."""
+        create_user_func  = self.__create_normal_user if not user.is_super_admin else self.__create_super_admin
+        if connection is None:
+            async with self.db_pool.transaction() as connection:
+                return await create_user_func(connection, user)
+        return await create_user_func(connection, user)
+    
+    async def get_user_by_username(self, username: str, connection: Optional[Connection] = None) -> UserDetailsResponse:
+        """Get a user by username."""
+        if connection is None:
+            async with self.db_pool.acquire() as connection:
+                return await self.__get_user_by_username(connection, username)
+        return await self.__get_user_by_username(connection, username)
+    
+    async def __get_user_by_username(self, connection: Connection, username: str) -> UserDetailsResponse:
+        """Get a user by username."""
+        company_id = await connection.fetchval("SELECT company_id FROM salesforce.users WHERE username = $1", username)
+        if not company_id:
+            raise UserNotFoundException(field="username", message="User not found.")
 
-    async def __get_user_by_username(
-        self, connection: Connection, username: str
-    ) -> UserInDB:
-        """Retrieve a user by username.
-
-        Queries both salesforce.users and <company_id>.members tables to get complete user info.
-
-        Args:
-            connection: Database connection
-            username: Username to search for
-
-        Returns:
-            UserInDB: Complete user object with membership details
-
-        Raises:
-            UserNotFoundException: If user not found in either schema
-        """
-        logger.debug("Fetching user by username", username=username)
-
-        find_user_query = """
-        SELECT id, username, name, contact_no, company_id,is_super_admin, is_active, created_at, updated_at
-        FROM users
-        WHERE username = $1;
-        """
-        find_user_in_company_query = """
-        SELECT id, role, area_id,is_active, created_at, updated_at
-        FROM members
-        WHERE id = $1;
-        """
-        await set_search_path(connection, "salesforce")
-        rs = await connection.fetchrow(find_user_query, username)
-
-        if rs:
-            if rs["is_super_admin"]:
-                logger.debug("Super admin user found", username=username)
-                return UserInDB(
-                    id=rs["id"],
-                    username=rs["username"],
-                    name=rs["name"],
-                    contact_no=rs["contact_no"],
-                    company_id=None,
-                    role="SUPER_ADMIN",
-                    area_id=None,
-                    is_super_admin=rs["is_super_admin"],
-                    is_active=rs["is_active"],
-                    created_at=rs["created_at"],
-                    updated_at=rs["updated_at"],
-                )
-            company_id = rs["company_id"]
-            user_id = rs["id"]
-            logger.debug(
-                "User found in salesforce schema",
-                user_id=str(user_id),
-                username=username,
-                company_id=str(company_id),
-            )
-
-            await set_search_path(connection, get_schema_name(company_id))
-            rs_company = await connection.fetchrow(find_user_in_company_query, user_id)
-
-            if rs_company:
-                logger.debug(
-                    "User membership found in company schema",
-                    user_id=str(user_id),
-                    role=rs_company["role"],
-                )
-                return UserInDB(
-                    id=rs["id"],
-                    username=rs["username"],
-                    name=rs["name"],
-                    contact_no=rs["contact_no"],
-                    company_id=rs["company_id"],
-                    role=rs_company["role"],
-                    area_id=rs_company["area_id"],
-                    is_super_admin=rs["is_super_admin"],
-                    is_active=rs_company["is_active"],
-                    created_at=rs_company["created_at"],
-                    updated_at=rs_company["updated_at"],
-                )
-            logger.warning(
-                "User found but no membership record",
-                user_id=str(user_id),
-                username=username,
-            )
-
-        logger.warning("User not found", username=username)
-        raise UserNotFoundException(field="username")
-
-    async def __get_user_by_id(
-        self, connection: Connection, user_id: UUID, company_id: UUID
-    ) -> UserInDB:
-        """Retrieve a user by ID.
-
-        Args:
-            connection: Database connection
-            user_id: UUID of the user
-            company_id: UUID of the company for schema context
-
-        Returns:
-            UserInDB: Complete user object with membership details
-
-        Raises:
-            UserNotFoundException: If user not found
-        """
-        logger.debug(
-            "Fetching user by ID",
-            user_id=str(user_id),
-            company_id=str(company_id),
-        )
-
-        find_user_query = """
-        SELECT id, username, name, contact_no, company_id,is_super_admin, is_active, created_at, updated_at
-        FROM users
-        WHERE id = $1;
-        """
-        find_user_in_company_query = """
-        SELECT id, role, area_id,is_active, created_at, updated_at
-        FROM members
-        WHERE id = $1;
-        """
-        await set_search_path(connection, "salesforce")
-        rs = await connection.fetchrow(find_user_query, user_id)
-
-        if rs:
-            if rs["is_super_admin"]:
-                logger.debug("Super admin user found", user_id=str(user_id))
-                return UserInDB(
-                    id=rs["id"],
-                    username=rs["username"],
-                    name=rs["name"],
-                    contact_no=rs["contact_no"],
-                    company_id=None,
-                    role="SUPER_ADMIN",
-                    area_id=None,
-                    is_super_admin=rs["is_super_admin"],
-                    is_active=rs["is_active"],
-                    created_at=rs["created_at"],
-                    updated_at=rs["updated_at"],
-                )
-            logger.debug("User found in salesforce schema", user_id=str(user_id))
-            await set_search_path(connection, get_schema_name(company_id))
-            rs_company = await connection.fetchrow(find_user_in_company_query, user_id)
-
-            if rs_company:
-                logger.debug(
-                    "User membership found",
-                    user_id=str(user_id),
-                    role=rs_company["role"],
-                )
-                return UserInDB(
-                    id=rs["id"],
-                    username=rs["username"],
-                    name=rs["name"],
-                    contact_no=rs["contact_no"],
-                    company_id=rs["company_id"],
-                    role=rs_company["role"],
-                    area_id=rs_company["area_id"],
-                    is_active=rs_company["is_active"],
-                    is_super_admin=rs["is_super_admin"],
-                    created_at=rs_company["created_at"],
-                    updated_at=rs_company["updated_at"],
-                )
-            logger.warning(
-                "User found but no membership record",
-                user_id=str(user_id),
-            )
-
-        logger.warning("User not found", user_id=str(user_id))
-        raise UserNotFoundException(field="id")
-
-    async def __get_users_by_company_id(
-        self, connection: Connection, company_id: UUID
-    ) -> list[UserInDB]:
-        """Retrieve all users by company ID.
-
-        Joins salesforce.users with company-specific members table.
-
-        Args:
-            connection: Database connection
-            company_id: UUID of the company
-
-        Returns:
-            list[UserInDB]: List of all users in the company
-        """
-        logger.debug("Fetching all users for company", company_id=str(company_id))
-
-        find_users_query = """
-        SELECT u.id, u.username, u.name, u.contact_no, u.company_id,u.is_super_admin, m.role, m.area_id, m.is_active, m.created_at, m.updated_at
-        FROM salesforce.users u
-        JOIN members m ON u.id = m.id
-        WHERE u.company_id = $1;
-        """
         await set_search_path(connection, get_schema_name(company_id))
-        rs = await connection.fetch(find_users_query, company_id)
-
-        users = []
-        for record in rs:
-            users.append(
-                UserInDB(
-                    id=record["id"],
-                    username=record["username"],
-                    name=record["name"],
-                    contact_no=record["contact_no"],
-                    company_id=record["company_id"],
-                    role=record["role"],
-                    area_id=record["area_id"],
-                    is_active=record["is_active"],
-                    is_super_admin=record["is_super_admin"],
-                    created_at=record["created_at"],
-                    updated_at=record["updated_at"],
-                )
-            )
-
-        logger.debug(
-            "Users fetched for company",
-            company_id=str(company_id),
-            user_count=len(users),
-        )
-        return users
-
-    async def __get_user_by_role(
-        self, connection: Connection, role: str, company_id: UUID
-    ) -> list[UserInDB]:
-        """Retrieve users by role within a company.
-
-        Args:
-            connection: Database connection
-            role: Role name to filter by
-            company_id: UUID of the company
-
-        Returns:
-            list[UserInDB]: List of users with the specified role
-        """
-        logger.debug(
-            "Fetching users by role",
-            role=role,
-            company_id=str(company_id),
-        )
-
-        find_users_query = """
-        SELECT u.id, u.username, u.name, u.contact_no, u.company_id,u.is_super_admin, m.role, m.area_id, m.is_active, m.created_at, m.updated_at
+        query = """
+        SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
+        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
         FROM salesforce.users u
+        JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
-        WHERE m.role = $1 AND u.company_id = $2;
+        JOIN areas a ON m.area_id = a.id
+        WHERE u.username = $1;
         """
-        await set_search_path(connection, get_schema_name(company_id))
-        rs = await connection.fetch(find_users_query, role, company_id)
-
-        users = []
-        for record in rs:
-            users.append(
-                UserInDB(
-                    id=record["id"],
-                    username=record["username"],
-                    name=record["name"],
-                    contact_no=record["contact_no"],
-                    company_id=record["company_id"],
-                    role=record["role"],
-                    area_id=record["area_id"],
-                    is_super_admin=record["is_super_admin"],
-                    is_active=record["is_active"],
-                    created_at=record["created_at"],
-                    updated_at=record["updated_at"],
-                )
-            )
-
-        logger.debug(
-            "Users fetched by role",
-            role=role,
-            company_id=str(company_id),
-            user_count=len(users),
+        rs = await connection.fetchrow(query, username)
+        if not rs:
+            raise UserNotFoundException(field="username", message="User not found.")
+        return UserDetailsResponse(
+            id=rs["id"],
+            username=rs["username"],
+            name=rs["name"],
+            contact_no=rs["contact_no"],
+            company_id=rs["company_id"],
+            company_name=rs["company_name"],
+            is_super_admin=rs["is_super_admin"],
+            is_active=rs["is_active"],
+            created_at=rs["created_at"],
+            updated_at=rs["updated_at"],
+            role=rs["role"],
+            area_id=rs["area_id"],
+            area_name=rs["area_name"],
+            area_type=rs["area_type"],
+            bank_details=BannkDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
         )
-        return users
-
-    async def __update_user(
-        self,
-        connection: Connection,
-        company_id: UUID,
-        user_id: UUID,
-        name: Optional[str] = None,
-        contact_no: Optional[str] = None,
-        role: Optional[str] = None,
-        area_id: Optional[int] = None,
-    ) -> UserInDB:
-        """Update user details.
-
-        Updates can span both salesforce.users (name, contact_no) and
-        company-specific members (role, area_id) tables.
-
-        Args:
-            connection: Database connection
-            company_id: UUID of the company for schema context
-            user_id: UUID of the user to update
-            name: New name (optional)
-            contact_no: New contact number (optional)
-            role: New role (optional)
-            area_id: New area assignment (optional)
-
-        Returns:
-            UserInDB: Updated user object
-
-        Raises:
-            ValueError: If no fields provided for update
+    async def get_user_by_id(self, user_id: UUID, connection: Optional[Connection] = None) -> UserDetailsResponse:
+        """Get a user by id."""
+        if connection is None:
+            async with self.db_pool.acquire() as connection:
+                return await self.__get_user_by_id(connection, user_id)
+        return await self.__get_user_by_id(connection, user_id)
+    async def __get_user_by_id(self, connection: Connection, user_id: UUID) -> UserDetailsResponse:
+        """Get a user by id."""
+        company_id = await connection.fetchval("SELECT company_id FROM salesforce.users WHERE id = $1", user_id)
+        if not company_id:
+            raise UserNotFoundException(field="user_id", message="User not found.")
+        await set_search_path(connection, get_schema_name(company_id))
+        query = """
+        SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
+        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        FROM salesforce.users u
+        JOIN salesforce.company c ON u.company_id = c.id
+        JOIN members m ON u.id = m.id
+        JOIN areas a ON m.area_id = a.id
+        WHERE u.id = $1;
         """
+        rs = await connection.fetchrow(query, user_id)
+        if not rs:
+            raise UserNotFoundException(field="user_id", message="User not found.")
+        return UserDetailsResponse(
+            id=rs["id"],
+            username=rs["username"],
+            name=rs["name"],
+            contact_no=rs["contact_no"],
+            company_id=rs["company_id"],
+            company_name=rs["company_name"],
+            is_super_admin=rs["is_super_admin"],
+            is_active=rs["is_active"],
+            created_at=rs["created_at"],
+            updated_at=rs["updated_at"],
+            role=rs["role"],
+            area_id=rs["area_id"],
+            area_name=rs["area_name"],
+            area_type=rs["area_type"],
+            bank_details=BannkDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
+        )
+    async def get_users_by_company_id(self, company_id: UUID, is_active: Optional[bool] = None,limit: int = 20, offset: int = 0, connection: Optional[Connection] = None) -> list[UserListResponse]:
+        """Get users by company id."""
+        if connection is None:
+            async with self.db_pool.acquire() as connection:
+                return await self.__get_users_by_company_id(connection, company_id, is_active, limit, offset)
+        return await self.__get_users_by_company_id(connection, company_id, is_active, limit, offset)
+    async def __get_users_by_company_id(self, connection: Connection, company_id: UUID, is_active: Optional[bool] = None, limit: int = 20, offset: int = 0) -> list[UserListResponse]:
+        """Get users by company id."""
+        query = """
+        SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
+        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        FROM salesforce.users u
+        JOIN salesforce.company c ON u.company_id = c.id
+        JOIN members m ON u.id = m.id
+        JOIN areas a ON m.area_id = a.id
+        WHERE u.company_id = $1
+        """
+        if is_active is not None:
+            query += " AND u.is_active = $4"
+        query += " ORDER BY u.created_at DESC LIMIT $2 OFFSET $3;"
+        await set_search_path(connection, get_schema_name(company_id))
+        if is_active is not None:
+            rs = await connection.fetch(query, company_id, limit, offset,is_active)
+        else:
+            rs = await connection.fetch(query, company_id, limit, offset)
+        if not rs:
+            raise UserNotFoundException(field="company_id", message="Users not found.")
+        return [UserListResponse(
+            id=record["id"],
+            username=record["username"],
+            name=record["name"],
+            contact_no=record["contact_no"],
+            company_id=record["company_id"],
+            role=record["role"],
+            area_id=record["area_id"],
+            area_name=record["area_name"],
+            is_active=record["is_active"],
+        ) for record in rs]
+    async def get_user_by_role(self,company_id: UUID, role: str, is_active: Optional[bool] = None, limit: int = 20, offset: int = 0, connection: Optional[Connection] = None) -> list[UserListResponse]:
+        """Get users by role."""
+        if connection is None:
+            async with self.db_pool.acquire() as connection:
+                return await self.__get_user_by_role(connection, company_id, role, is_active, limit, offset)
+        return await self.__get_user_by_role(connection, company_id, role, is_active, limit, offset)
+    async def __get_user_by_role(self, connection: Connection, company_id: UUID, role: str, is_active: Optional[bool] = None, limit: int = 20, offset: int = 0) -> list[UserListResponse]:
+        """Get users by role."""
+        await set_search_path(connection, get_schema_name(company_id))
+        query = """
+        SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
+        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        FROM salesforce.users u
+        JOIN salesforce.company c ON u.company_id = c.id
+        JOIN members m ON u.id = m.id
+        JOIN areas a ON m.area_id = a.id
+        WHERE m.role = $1
+        """
+        if is_active is not None:
+            query += " AND u.is_active = $4"
+        query += " ORDER BY u.created_at DESC LIMIT $2 OFFSET $3;"
+        if is_active is not None:
+            rs = await connection.fetch(query, role, limit, offset,is_active)
+        else:
+            rs = await connection.fetch(query, role, limit, offset)
+        if not rs:
+            raise UserNotFoundException(field="role", message="Users not found.")
+        return [UserListResponse(
+            id=record["id"],
+            username=record["username"],
+            name=record["name"],
+            contact_no=record["contact_no"],
+            company_id=record["company_id"],
+            role=record["role"],
+            area_id=record["area_id"],
+            area_name=record["area_name"],
+            is_active=record["is_active"],
+        ) for record in rs]
+    
+    async def update_user(self, user_id: UUID, user: UserUpdate, connection: Optional[Connection] = None) -> UserInDB:
+        """Update a user."""
+        if connection is None:
+            async with self.db_pool.acquire() as connection:
+                return await self.__update_user(connection, user_id, user)
+        return await self.__update_user(connection, user_id, user)
+    async def __update_user(self, connection: Connection, user_id: UUID, user: UserUpdate) -> UserInDB:
         logger.debug(
             "Updating user",
             user_id=str(user_id),
-            company_id=str(company_id),
-            has_name=name is not None,
-            has_contact=contact_no is not None,
-            has_role=role is not None,
-            has_area=area_id is not None,
+            company_id=str(user.company_id),
+            has_name=user.name is not None,
+            has_contact=user.contact_no is not None,
+            has_role=user.role is not None,
+            has_area=user.area_id is not None,
         )
 
         # Update salesforce.users table
         update_fields = []
         update_values = []
-        if name is not None:
+        if user.name is not None:
             update_fields.append("name = $" + str(len(update_values) + 1))
-            update_values.append(name)
-        if contact_no is not None:
+            update_values.append(user.name)
+        if user.contact_no is not None:
             update_fields.append("contact_no = $" + str(len(update_values) + 1))
-            update_values.append(contact_no)
-
-        if not update_fields and role is None and area_id is None:
-            logger.error("Update failed - no fields provided", user_id=str(user_id))
-            raise ValueError("No fields to update.")
+            update_values.append(user.contact_no)
 
         rs1 = None
         if update_fields:
@@ -577,7 +379,7 @@ class UserRepository:
                     user_id=str(user_id),
                     error=str(e),
                 )
-                field = "contact_no" if contact_no is not None else "name"
+                field = "contact_no" if user.contact_no is not None else "name"
                 raise UserAlreadyExistsException(
                     field=field, message=f"User with this {field} already exists."
                 ) from e
@@ -585,12 +387,15 @@ class UserRepository:
         # Update company-specific members table
         update_fields = []
         update_values = []
-        if role is not None:
+        if user.role is not None:
             update_fields.append("role = $" + str(len(update_values) + 1))
-            update_values.append(role)
-        if area_id is not None:
+            update_values.append(user.role)
+        if user.area_id is not None:
             update_fields.append("area_id = $" + str(len(update_values) + 1))
-            update_values.append(area_id)
+            update_values.append(user.area_id)
+        if user.bank_details is not None:
+            update_fields.append("bank_details = $" + str(len(update_values) + 1))
+            update_values.append(user.bank_details.model_dump_json())
 
         rs2 = None
         if update_fields:
@@ -613,7 +418,7 @@ class UserRepository:
                     user_id=str(user_id),
                     error=str(e),
                 )
-                field = "role" if role is not None else "area_id"
+                field = "role" if user.role is not None else "area_id"
                 raise UserAlreadyExistsException(
                     field=field, message=f"A constraint violation occurred for {field}."
                 ) from e
@@ -621,20 +426,20 @@ class UserRepository:
                 logger.error(
                     "User update failed - foreign key violation in company schema",
                     user_id=str(user_id),
-                    role=role,
-                    area_id=area_id,
+                    role=user.role,
+                    area_id=user.area_id,
                     error=str(e),
                 )
                 # Determine which foreign key failed
                 error_msg = str(e).lower()
                 if "role" in error_msg:
                     raise RoleNotFoundException(
-                        field="role", message=f"Role '{role}' does not exist."
+                        field="role", message=f"Role '{user.role}' does not exist."
                     ) from e
                 elif "area" in error_msg:
                     raise AreaNotFoundException(
                         field="area_id",
-                        message=f"Area with id {area_id} does not exist.",
+                        message=f"Area with id {user.area_id} does not exist.",
                     ) from e
                 else:
                     raise UserNotFoundException(
@@ -648,7 +453,7 @@ class UserRepository:
                 "SELECT * FROM users WHERE id = $1", user_id
             )
         if rs2 is None:
-            await set_search_path(connection, get_schema_name(company_id))
+            await set_search_path(connection, get_schema_name(user.company_id))
             rs2 = await connection.fetchrow(
                 "SELECT * FROM members WHERE id = $1", user_id
             )
@@ -662,6 +467,7 @@ class UserRepository:
                 company_id=None,
                 role="SUPER_ADMIN",
                 area_id=None,
+                bank_details=None,
                 is_active=rs1["is_active"],
                 is_super_admin=rs1["is_super_admin"],
                 created_at=rs1["created_at"],
@@ -681,318 +487,41 @@ class UserRepository:
             company_id=rs1["company_id"],
             role=rs2["role"],
             area_id=rs2["area_id"],
+            bank_details=BannkDetails.model_validate_json(rs2["bank_details"]) if rs2["bank_details"] else None,
             is_active=rs1["is_active"],
             is_super_admin=rs1["is_super_admin"],
             created_at=rs2["created_at"],
             updated_at=rs2["updated_at"],
         )
+    async def delete_user(self, user_id: UUID, connection: Optional[Connection] = None) -> None:
+        """Delete a user."""
+        if connection is None:
+            async with self.db_pool.transaction() as connection:
+                return await self.__delete_user(connection, user_id)
+        return await self.__delete_user(connection, user_id)
 
-    async def __delete_user(
-        self, connection: Connection, user_id: UUID, company_id: UUID
-    ) -> None:
-        """Delete a user from the database (soft delete).
-
-        Marks user as inactive in both salesforce.users and company-specific members tables.
-
-        Args:
-            connection: Database connection
-            user_id: UUID of the user to delete
-            company_id: UUID of the company for schema context
-        """
-        logger.debug(
-            "Soft deleting user",
-            user_id=str(user_id),
-            company_id=str(company_id),
-        )
-
+    async def __delete_user(self, connection: Connection, user_id: UUID) -> None:
+        """Delete a user."""
         delete_user_query = """
         UPDATE users
         SET is_active = FALSE
-        WHERE id = $1 AND company_id = $2;
+        WHERE id = $1
+        RETURNING company_id;
         """
         await set_search_path(connection, "salesforce")
-        await connection.execute(delete_user_query, user_id, company_id)
-        logger.debug("User marked inactive in salesforce schema", user_id=str(user_id))
-
-        delete_member_query = """
-        UPDATE members
-        SET is_active = FALSE
-        WHERE id = $1;
-        """
-        await set_search_path(connection, get_schema_name(company_id))
-        await connection.execute(delete_member_query, user_id)
-        logger.debug("Member marked inactive in company schema", user_id=str(user_id))
+        rs = await connection.fetchrow(delete_user_query, user_id)
+        if not rs:
+            raise UserNotFoundException(field="user_id", message="User not found.")
+        company_id = rs["company_id"]
+        logger.debug("User deleted in salesforce schema", user_id=str(user_id))
+        if company_id:
+            delete_member_query = """
+            UPDATE members
+            SET is_active = FALSE
+            WHERE id = $1;
+            """
+            await set_search_path(connection, get_schema_name(company_id))
+            await connection.execute(delete_member_query, user_id)
+            logger.debug("Member deleted in company schema", user_id=str(user_id))
 
         logger.info("User soft deleted successfully", user_id=str(user_id))
-
-    async def __delete_super_admin(self, connection: Connection, user_id: UUID) -> None:
-        """Delete a super admin user from the database (soft delete).
-
-        Marks super admin user as inactive in salesforce.users table.
-
-        Args:
-            connection: Database connection
-            user_id: UUID of the super admin user to delete
-        """
-        logger.debug(
-            "Soft deleting super admin user",
-            user_id=str(user_id),
-        )
-
-        delete_user_query = """
-        UPDATE users
-        SET is_active = FALSE
-        WHERE id = $1 AND is_super_admin = TRUE;
-        """
-        await set_search_path(connection, "salesforce")
-        await connection.execute(delete_user_query, user_id)
-        logger.info("Super admin user soft deleted successfully", user_id=str(user_id))
-
-    async def create_user(
-        self,
-        username: str,
-        name: str,
-        contact_no: str,
-        company_id: UUID,
-        role: str,
-        area_id: Optional[int] = None,
-        *,
-        connection: Optional[Connection] = None,
-    ) -> UserInDB:
-        """Create a new user in the database.
-
-        Public interface for user creation. Manages connection pooling if needed.
-
-        Args:
-            username: Unique username
-            name: Full name
-            contact_no: Contact phone number
-            company_id: Company UUID
-            role: User role
-            area_id: Optional area assignment
-            connection: Optional existing connection (for transactions)
-
-        Returns:
-            UserInDB: Created user object
-        """
-        logger.info("create_user called", username=username, company_id=str(company_id))
-        if connection is None:
-            async with self.db_pool.transaction() as connection:
-                return await self.__create_user(
-                    connection, username, name, contact_no, company_id, role, area_id
-                )
-        return await self.__create_user(
-            connection, username, name, contact_no, company_id, role, area_id
-        )
-
-    async def get_user_by_username(
-        self, username: str, *, connection: Optional[Connection] = None
-    ) -> UserInDB:
-        """Retrieve a user by username.
-
-        Public interface for fetching user by username.
-
-        Args:
-            username: Username to search for
-            connection: Optional existing connection
-
-        Returns:
-            UserInDB: User object with complete details
-        """
-        logger.info("get_user_by_username called", username=username)
-        if connection is None:
-            async with self.db_pool.acquire() as connection:
-                return await self.__get_user_by_username(connection, username)
-        return await self.__get_user_by_username(connection, username)
-
-    async def get_user_by_id(
-        self,
-        user_id: UUID,
-        company_id: UUID,
-        *,
-        connection: Optional[Connection] = None,
-    ) -> UserInDB:
-        """Retrieve a user by ID.
-
-        Public interface for fetching user by ID.
-
-        Args:
-            user_id: User UUID
-            company_id: Company UUID
-            connection: Optional existing connection
-
-        Returns:
-            UserInDB: User object with complete details
-        """
-        logger.info(
-            "get_user_by_id called",
-            user_id=str(user_id),
-            company_id=str(company_id),
-        )
-        if connection is None:
-            async with self.db_pool.acquire() as connection:
-                return await self.__get_user_by_id(connection, user_id, company_id)
-        return await self.__get_user_by_id(connection, user_id, company_id)
-
-    async def get_users_by_company_id(
-        self, company_id: UUID, *, connection: Optional[Connection] = None
-    ) -> list[UserInDB]:
-        """Retrieve all users by company ID.
-
-        Public interface for fetching all company users.
-
-        Args:
-            company_id: Company UUID
-            connection: Optional existing connection
-
-        Returns:
-            list[UserInDB]: List of all users in the company
-        """
-        logger.info("get_users_by_company_id called", company_id=str(company_id))
-        if connection is None:
-            async with self.db_pool.acquire() as connection:
-                return await self.__get_users_by_company_id(connection, company_id)
-        return await self.__get_users_by_company_id(connection, company_id)
-
-    async def get_user_by_role(
-        self, role: str, company_id: UUID, *, connection: Optional[Connection] = None
-    ) -> list[UserInDB]:
-        """Retrieve users by role within a company.
-
-        Public interface for fetching users by role.
-
-        Args:
-            role: Role name to filter by
-            company_id: Company UUID
-            connection: Optional existing connection
-
-        Returns:
-            list[UserInDB]: List of users with the specified role
-        """
-        logger.info(
-            "get_user_by_role called",
-            role=role,
-            company_id=str(company_id),
-        )
-        if connection is None:
-            async with self.db_pool.acquire() as connection:
-                return await self.__get_user_by_role(connection, role, company_id)
-        return await self.__get_user_by_role(connection, role, company_id)
-
-    async def update_user(
-        self,
-        company_id: UUID,
-        user_id: UUID,
-        name: Optional[str] = None,
-        contact_no: Optional[str] = None,
-        role: Optional[str] = None,
-        area_id: Optional[int] = None,
-        *,
-        connection: Optional[Connection] = None,
-    ) -> UserInDB:
-        """Update user details.
-
-        Public interface for updating user information.
-
-        Args:
-            company_id: Company UUID
-            user_id: User UUID to update
-            name: New name (optional)
-            contact_no: New contact number (optional)
-            role: New role (optional)
-            area_id: New area assignment (optional)
-            connection: Optional existing connection
-
-        Returns:
-            UserInDB: Updated user object
-        """
-        logger.info(
-            "update_user called", user_id=str(user_id), company_id=str(company_id)
-        )
-        if connection is None:
-            async with self.db_pool.transaction() as connection:
-                return await self.__update_user(
-                    connection, company_id, user_id, name, contact_no, role, area_id
-                )
-        return await self.__update_user(
-            connection, company_id, user_id, name, contact_no, role, area_id
-        )
-
-    async def delete_user(
-        self,
-        user_id: UUID,
-        company_id: UUID,
-        *,
-        connection: Optional[Connection] = None,
-    ) -> None:
-        """Delete a user from the database (soft delete).
-
-        Public interface for soft-deleting users.
-
-        Args:
-            user_id: User UUID to delete
-            company_id: Company UUID
-            connection: Optional existing connection
-        """
-        logger.info(
-            "delete_user called",
-            user_id=str(user_id),
-            company_id=str(company_id),
-        )
-        if connection is None:
-            async with self.db_pool.transaction() as connection:
-                return await self.__delete_user(connection, user_id, company_id)
-        return await self.__delete_user(connection, user_id, company_id)
-
-    async def create_super_admin(
-        self,
-        username: str,
-        name: str,
-        contact_no: str,
-        *,
-        connection: Optional[Connection] = None,
-    ) -> UserInDB:
-        """Create a new super admin user in the database.
-
-        Public interface for super admin user creation. Manages connection pooling if needed.
-
-        Args:
-            username: Unique username
-            name: Full name
-            contact_no: Contact phone number
-            connection: Optional existing connection (for transactions)
-        Returns:
-            UserInDB: Created super admin user object
-        """
-        logger.info("create_super_admin called", username=username)
-        if connection is None:
-            async with self.db_pool.transaction() as connection:
-                return await self.__create_super_admin(
-                    connection, username, name, contact_no
-                )
-        return await self.__create_super_admin(connection, username, name, contact_no)
-
-    async def delete_super_admin(
-        self,
-        user_id: UUID,
-        *,
-        connection: Optional[Connection] = None,
-    ) -> None:
-        """Delete a super admin user from the database (soft delete).
-
-        Marks super admin user as inactive in salesforce.users table.
-
-        Args:
-            user_id: UUID of the super admin user to delete
-            connection: Optional existing connection
-        """
-        logger.debug(
-            "Soft deleting super admin user",
-            user_id=str(user_id),
-        )
-
-        if connection is None:
-            async with self.db_pool.transaction() as connection:
-                await self.__delete_super_admin(connection, user_id)
-        else:
-            await self.__delete_super_admin(connection, user_id)

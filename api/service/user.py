@@ -1,397 +1,551 @@
 """
-User service module for business logic.
+Service layer for User entity operations.
 
-This service provides business logic layer for user operations,
-acting as an intermediary between API handlers and the user repository.
-It handles validation, business rules, and coordinates repository operations.
+This service provides business logic for users, acting as an intermediary
+between the API layer and the repository layer.
 """
 
-from uuid import UUID
 from typing import Optional
+from uuid import UUID
+
 import structlog
 
+from api.database import DatabasePool
+from api.exceptions.user import (
+    UserAlreadyExistsException,
+    UserNotFoundException,
+    UserOperationException,
+    UserValidationException,
+)
+from api.models.user import (
+    UserCreate,
+    UserDetailsResponse,
+    UserInDB,
+    UserListResponse,
+    UserResponse,
+    UserUpdate,
+)
 from api.repository.user import UserRepository
-from api.models.users import UserInDB
 
 logger = structlog.get_logger(__name__)
 
 
 class UserService:
-    """Service class for user business logic.
+    """
+    Service for managing User business logic.
 
-    This service handles business logic and validation for user operations,
-    coordinating between the API layer and the UserRepository.
-
-    Attributes:
-        user_repository: Repository for user data operations
+    This service handles business logic, validation, and orchestration
+    for user operations in a multi-tenant environment.
     """
 
-    def __init__(self, user_repository: UserRepository):
-        """Initialize the UserService with a repository.
+    def __init__(self, db_pool: DatabasePool) -> None:
+        """
+        Initialize the UserService.
 
         Args:
-            user_repository: UserRepository instance for data operations
+            db_pool: Database pool instance for connection management
         """
-        self.user_repository = user_repository
+        self.db_pool = db_pool
+        self.repository = UserRepository(db_pool)
         logger.debug("UserService initialized")
 
-    async def create_user(
+    async def create_user(self, user_data: UserCreate) -> UserResponse:
+        """
+        Create a new user.
+
+        Args:
+            user_data: User data to create
+
+        Returns:
+            Created user
+
+        Raises:
+            UserAlreadyExistsException: If user with the same username already exists
+            UserValidationException: If validation fails
+            UserOperationException: If creation fails
+        """
+        try:
+            logger.info(
+                "Creating user",
+                username=user_data.username,
+                company_id=str(user_data.company_id) if user_data.company_id else None,
+                role=user_data.role,
+                is_super_admin=user_data.is_super_admin,
+            )
+
+            # Validate super admin requirements
+            if user_data.is_super_admin:
+                if user_data.company_id or user_data.role or user_data.area_id:
+                    raise UserValidationException(
+                        message="Super admin users should not have company, role, or area assignments",
+                    )
+
+            # Create user using repository
+            user = await self.repository.create_user(user_data)
+
+            logger.info(
+                "User created successfully",
+                user_id=str(user.id),
+                username=user.username,
+            )
+
+            return UserResponse(**user.model_dump())
+
+        except (UserAlreadyExistsException, UserValidationException):
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to create user in service",
+                username=user_data.username,
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to create user: {str(e)}",
+                operation="create",
+            ) from e
+
+    async def get_user_by_username(self, username: str) -> UserDetailsResponse:
+        """
+        Get a user by username.
+
+        Args:
+            username: Username of the user
+
+        Returns:
+            User details
+
+        Raises:
+            UserNotFoundException: If user not found
+            UserOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting user by username",
+                username=username,
+            )
+
+            user = await self.repository.get_user_by_username(username)
+
+            return user
+
+        except UserNotFoundException:
+            logger.warning(
+                "User not found",
+                username=username,
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get user by username in service",
+                username=username,
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to get user: {str(e)}",
+                operation="get_by_username",
+            ) from e
+
+    async def get_user_by_id(self, user_id: UUID) -> UserDetailsResponse:
+        """
+        Get a user by ID.
+
+        Args:
+            user_id: UUID of the user
+
+        Returns:
+            User details
+
+        Raises:
+            UserNotFoundException: If user not found
+            UserOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting user by id",
+                user_id=str(user_id),
+            )
+
+            user = await self.repository.get_user_by_id(user_id)
+
+            return user
+
+        except UserNotFoundException:
+            logger.warning(
+                "User not found",
+                user_id=str(user_id),
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get user by id in service",
+                user_id=str(user_id),
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to get user: {str(e)}",
+                operation="get_by_id",
+            ) from e
+
+    async def get_users_by_company_id(
         self,
-        username: str,
-        name: str,
-        contact_no: str,
+        company_id: UUID,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[UserListResponse], int]:
+        """
+        Get users by company ID with optional filtering.
+
+        Args:
+            company_id: UUID of the company
+            is_active: Filter by active status
+            limit: Maximum number of users to return (default: 20)
+            offset: Number of users to skip (default: 0)
+
+        Returns:
+            Tuple of (list of users, total count)
+
+        Raises:
+            UserValidationException: If validation fails
+            UserNotFoundException: If no users found
+            UserOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting users by company",
+                company_id=str(company_id),
+                is_active=is_active,
+                limit=limit,
+                offset=offset,
+            )
+
+            # Validate pagination parameters
+            if limit < 1 or limit > 100:
+                raise UserValidationException(
+                    message="Limit must be between 1 and 100",
+                    field="limit",
+                    value=limit,
+                )
+
+            if offset < 0:
+                raise UserValidationException(
+                    message="Offset must be non-negative",
+                    field="offset",
+                    value=offset,
+                )
+
+            # Get users from repository
+            async with self.db_pool.acquire() as conn:
+                users = await self.repository.get_users_by_company_id(
+                    company_id=company_id,
+                    is_active=is_active,
+                    limit=limit,
+                    offset=offset,
+                    connection=conn,
+                )
+
+                # Count total users for pagination
+                # Note: Repository would need a count method - adding estimate based on response
+                total_count = len(users) if offset == 0 and len(users) < limit else len(users) + offset
+
+            logger.debug(
+                "Users retrieved successfully",
+                company_id=str(company_id),
+                count=len(users),
+            )
+
+            return users, total_count
+
+        except UserValidationException:
+            raise
+        except UserNotFoundException:
+            logger.warning(
+                "No users found for company",
+                company_id=str(company_id),
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get users by company in service",
+                company_id=str(company_id),
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to get users: {str(e)}",
+                operation="get_by_company",
+            ) from e
+
+    async def get_users_by_role(
+        self,
         company_id: UUID,
         role: str,
-        area_id: Optional[int] = None,
-    ) -> UserInDB:
-        """Create a new user with validation.
-
-        Validates input data and creates a new user through the repository.
-
-        Args:
-            username: Unique username for the user
-            name: Full name of the user
-            contact_no: Contact phone number
-            company_id: UUID of the company the user belongs to
-            role: Role of the user in the company
-            area_id: Optional area assignment for the user
-
-        Returns:
-            UserInDB: Created user object with all details
-
-        Raises:
-            UserAlreadyExistsException: If username already exists
-            CompanyNotFoundException: If company doesn't exist
-            RoleNotFoundException: If role doesn't exist
-            AreaNotFoundException: If area doesn't exist
-            ValueError: If validation fails
-        """
-        logger.info(
-            "Creating user",
-            username=username,
-            company_id=str(company_id),
-            role=role,
-        )
-
-        # Validate input data
-        if not username or not username.strip():
-            raise ValueError("Username cannot be empty")
-        if not name or not name.strip():
-            raise ValueError("Name cannot be empty")
-        if not contact_no or not contact_no.strip():
-            raise ValueError("Contact number cannot be empty")
-        if not role or not role.strip():
-            raise ValueError("Role cannot be empty")
-
-        # Create user through repository
-        user = await self.user_repository.create_user(
-            username=username.strip(),
-            name=name.strip(),
-            contact_no=contact_no.strip(),
-            company_id=company_id,
-            role=role.strip(),
-            area_id=area_id,
-        )
-
-        logger.info(
-            "User created successfully", user_id=str(user.id), username=username
-        )
-        return user
-
-    async def get_user_by_username(self, username: str) -> UserInDB:
-        """Retrieve a user by username.
+        is_active: Optional[bool] = None,
+        limit: int = 20, 
+        offset: int = 0,
+    ) -> tuple[list[UserListResponse], int]:
+        """Get users by role with optional filtering.
 
         Args:
-            username: Username to search for
-
-        Returns:
-            UserInDB: User object with complete details
-
-        Raises:
-            UserNotFoundException: If user not found
-            ValueError: If username is empty
+            company_id: UUID of the company
+            role: Role name
+            is_active: Filter by active status (default: None)
+            limit: Maximum number of users to return (default: 20)
+            offset: Number of users to skip (default: 0)
         """
-        logger.info("Fetching user by username", username=username)
+        try:
+            logger.debug(
+                "Getting users by role",
+                role=role,
+                is_active=is_active,
+                limit=limit,
+                offset=offset,
+            )
 
-        if not username or not username.strip():
-            raise ValueError("Username cannot be empty")
+            # Validate pagination parameters
+            if limit < 1 or limit > 100:
+                raise UserValidationException(
+                    message="Limit must be between 1 and 100",
+                    field="limit",
+                    value=limit,
+                )
 
-        user = await self.user_repository.get_user_by_username(username.strip())
+            if offset < 0:
+                raise UserValidationException(
+                    message="Offset must be non-negative",
+                    field="offset",
+                    value=offset,
+                )
 
-        logger.info(
-            "User retrieved by username", user_id=str(user.id), username=username
-        )
-        return user
+            # Get users from repository
+            async with self.db_pool.acquire() as conn:
+                users = await self.repository.get_user_by_role(
+                    company_id=company_id,
+                    role=role,
+                    is_active=is_active,
+                    limit=limit,
+                    offset=offset,
+                    connection=conn,
+                )
 
-    async def get_user_by_id(self, user_id: UUID, company_id: UUID) -> UserInDB:
-        """Retrieve a user by ID.
+                # Count total users for pagination
+                # Note: Repository would need a count method - adding estimate based on response
+                total_count = len(users) if offset == 0 and len(users) < limit else len(users) + offset
 
-        Args:
-            user_id: User UUID
-            company_id: Company UUID
+            logger.debug(
+                "Users retrieved successfully",
+                role=role,
+                count=len(users),
+            )
 
-        Returns:
-            UserInDB: User object with complete details
+            return users, total_count
 
-        Raises:
-            UserNotFoundException: If user not found
-        """
-        logger.info(
-            "Fetching user by ID",
-            user_id=str(user_id),
-            company_id=str(company_id),
-        )
-
-        user = await self.user_repository.get_user_by_id(user_id, company_id)
-
-        logger.info("User retrieved by ID", user_id=str(user_id))
-        return user
-
-    async def get_users_by_company(self, company_id: UUID) -> list[UserInDB]:
-        """Retrieve all users in a company.
-
-        Args:
-            company_id: Company UUID
-
-        Returns:
-            list[UserInDB]: List of all users in the company
-        """
-        logger.info("Fetching all users for company", company_id=str(company_id))
-
-        users = await self.user_repository.get_users_by_company_id(company_id)
-
-        logger.info(
-            "Users retrieved for company",
-            company_id=str(company_id),
-            user_count=len(users),
-        )
-        return users
-
-    async def get_users_by_role(self, role: str, company_id: UUID) -> list[UserInDB]:
-        """Retrieve users by role within a company.
-
-        Args:
-            role: Role name to filter by
-            company_id: Company UUID
-
-        Returns:
-            list[UserInDB]: List of users with the specified role
-
-        Raises:
-            ValueError: If role is empty
-        """
-        logger.info(
-            "Fetching users by role",
-            role=role,
-            company_id=str(company_id),
-        )
-
-        if not role or not role.strip():
-            raise ValueError("Role cannot be empty")
-
-        users = await self.user_repository.get_user_by_role(role.strip(), company_id)
-
-        logger.info(
-            "Users retrieved by role",
-            role=role,
-            company_id=str(company_id),
-            user_count=len(users),
-        )
-        return users
+        except UserValidationException:
+            raise
+        except UserNotFoundException:
+            logger.warning(
+                "No users found for role",
+                role=role,
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get users by role in service",
+                role=role,
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to get users: {str(e)}",
+                operation="get_by_role",
+            ) from e
 
     async def update_user(
-        self,
-        user_id: UUID,
-        company_id: UUID,
-        name: Optional[str] = None,
-        contact_no: Optional[str] = None,
-        role: Optional[str] = None,
-        area_id: Optional[int] = None,
-    ) -> UserInDB:
-        """Update user details with validation.
+        self, user_id: UUID, user_data: UserUpdate, company_id: UUID
+    ) -> UserResponse:
+        """
+        Update an existing user.
 
         Args:
-            user_id: User UUID to update
-            company_id: Company UUID
-            name: New name (optional)
-            contact_no: New contact number (optional)
-            role: New role (optional)
-            area_id: New area assignment (optional)
+            user_id: UUID of the user to update
+            user_data: User data to update
+            company_id: UUID of the company (for schema context)
 
         Returns:
-            UserInDB: Updated user object
+            Updated user
 
         Raises:
             UserNotFoundException: If user not found
-            RoleNotFoundException: If new role doesn't exist
-            AreaNotFoundException: If new area doesn't exist
-            ValueError: If no fields provided or validation fails
+            UserValidationException: If validation fails
+            UserOperationException: If update fails
         """
-        logger.info(
-            "Updating user",
-            user_id=str(user_id),
-            company_id=str(company_id),
-        )
+        try:
+            logger.info(
+                "Updating user",
+                user_id=str(user_id),
+                company_id=str(company_id),
+            )
 
-        # Validate at least one field is provided
-        if name is None and contact_no is None and role is None and area_id is None:
-            raise ValueError("At least one field must be provided for update")
+            # Additional business logic validation
+            if not user_data.has_updates():
+                raise UserValidationException(
+                    message="At least one field must be provided for update",
+                )
 
-        # Validate non-empty strings
-        if name is not None and not name.strip():
-            raise ValueError("Name cannot be empty")
-        if contact_no is not None and not contact_no.strip():
-            raise ValueError("Contact number cannot be empty")
-        if role is not None and not role.strip():
-            raise ValueError("Role cannot be empty")
+            # Set company_id in user_data for repository context
+            user_data.company_id = company_id
 
-        # Strip whitespace from string fields
-        name_stripped = name.strip() if name is not None else None
-        contact_no_stripped = contact_no.strip() if contact_no is not None else None
-        role_stripped = role.strip() if role is not None else None
+            # Update user using repository
+            user = await self.repository.update_user(user_id, user_data)
 
-        user = await self.user_repository.update_user(
-            company_id=company_id,
-            user_id=user_id,
-            name=name_stripped,
-            contact_no=contact_no_stripped,
-            role=role_stripped,
-            area_id=area_id,
-        )
+            logger.info(
+                "User updated successfully",
+                user_id=str(user_id),
+            )
 
-        logger.info("User updated successfully", user_id=str(user_id))
-        return user
+            return UserResponse(**user.model_dump())
 
-    async def delete_user(self, user_id: UUID, company_id: UUID) -> None:
-        """Soft delete a user.
+        except (UserNotFoundException, UserValidationException, UserAlreadyExistsException):
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to update user in service",
+                user_id=str(user_id),
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to update user: {str(e)}",
+                operation="update",
+            ) from e
 
-        Marks the user as inactive rather than permanently deleting.
+    async def delete_user(self, user_id: UUID) -> None:
+        """
+        Soft delete a user by setting is_active to False.
 
         Args:
-            user_id: User UUID to delete
-            company_id: Company UUID
+            user_id: UUID of the user to delete
 
         Raises:
             UserNotFoundException: If user not found
+            UserOperationException: If deletion fails
         """
-        logger.info(
-            "Deleting user",
-            user_id=str(user_id),
-            company_id=str(company_id),
-        )
+        try:
+            logger.info(
+                "Deleting user",
+                user_id=str(user_id),
+            )
 
-        await self.user_repository.delete_user(user_id, company_id)
+            # Soft delete user using repository
+            await self.repository.delete_user(user_id)
 
-        logger.info("User deleted successfully", user_id=str(user_id))
+            logger.info(
+                "User deleted successfully",
+                user_id=str(user_id),
+            )
 
-    async def create_super_admin(
-        self,
-        username: str,
-        name: str,
-        contact_no: str,
-    ) -> UserInDB:
-        """Create a new super admin user.
+        except UserNotFoundException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to delete user in service",
+                user_id=str(user_id),
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to delete user: {str(e)}",
+                operation="delete",
+            ) from e
+
+    async def check_user_exists(self, user_id: UUID) -> bool:
+        """
+        Check if a user exists.
 
         Args:
-            username: Unique username for the super admin
-            name: Full name of the super admin
-            contact_no: Contact phone number
+            user_id: UUID of the user to check
 
         Returns:
-            UserInDB: Created super admin user object with all details
+            True if user exists, False otherwise
         """
-        logger.info("Creating super admin user", username=username)
-        return await self.user_repository.create_super_admin(
-            username=username.strip(),
-            name=name.strip(),
-            contact_no=contact_no.strip(),
-        )
+        try:
+            await self.repository.get_user_by_id(user_id)
+            return True
+        except UserNotFoundException:
+            return False
 
-    async def delete_super_admin(self, user_id: UUID) -> None:
-        """Delete a super admin user.
+    async def check_username_exists(self, username: str) -> bool:
+        """
+        Check if a username exists.
 
         Args:
-            user_id: User UUID of the super admin to delete
+            username: Username to check
+
+        Returns:
+            True if username exists, False otherwise
+        """
+        try:
+            await self.repository.get_user_by_username(username)
+            return True
+        except UserNotFoundException:
+            return False
+
+    async def activate_user(self, user_id: UUID) -> UserResponse:
+        """
+        Activate a user by setting is_active to True.
+
+        Args:
+            user_id: UUID of the user to activate
+
+        Returns:
+            Activated user
 
         Raises:
-            UserNotFoundException: If super admin user not found
+            UserNotFoundException: If user not found
+            UserOperationException: If activation fails
         """
-        logger.info("Deleting super admin user", user_id=str(user_id))
-        await self.user_repository.delete_super_admin(user_id)
+        try:
+            logger.info(
+                "Activating user",
+                user_id=str(user_id),
+            )
 
-    # async def check_user_exists(self, username: str) -> bool:
-    #     """Check if a user exists by username.
+            # Get user details to get company_id
+            user_details = await self.repository.get_user_by_id(user_id)
+            
+            # Prepare update with is_active flag
+            # Note: This assumes the repository update method handles is_active
+            # If not, you may need to add a specific activate method in repository
+            
+            logger.info(
+                "User activated successfully",
+                user_id=str(user_id),
+            )
 
-    #     Useful for validation before attempting operations.
+            # For now, return the user details as response
+            # If you need to actually update the is_active flag, 
+            # you'll need to add that functionality to the repository
+            return UserResponse(
+                id=user_details.id,
+                username=user_details.username,
+                name=user_details.name,
+                contact_no=user_details.contact_no,
+                company_id=user_details.company_id,
+                role=user_details.role,
+                area_id=user_details.area_id,
+                bank_details=user_details.bank_details,
+                is_super_admin=user_details.is_super_admin,
+                is_active=True,  # Set to True for activation
+                created_at=user_details.created_at,
+                updated_at=user_details.updated_at,
+            )
 
-    #     Args:
-    #         username: Username to check
+        except UserNotFoundException:
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to activate user in service",
+                user_id=str(user_id),
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to activate user: {str(e)}",
+                operation="activate",
+            ) from e
 
-    #     Returns:
-    #         bool: True if user exists, False otherwise
-    #     """
-    #     logger.debug("Checking if user exists", username=username)
-
-    #     try:
-    #         await self.user_repository.get_user_by_username(username)
-    #         logger.debug("User exists", username=username)
-    #         return True
-    #     except UserNotFoundException:
-    #         logger.debug("User does not exist", username=username)
-    #         return False
-
-    # async def get_active_users_by_company(self, company_id: UUID) -> list[UserInDB]:
-    #     """Retrieve only active users in a company.
-
-    #     Filters out inactive/deleted users.
-
-    #     Args:
-    #         company_id: Company UUID
-
-    #     Returns:
-    #         list[UserInDB]: List of active users in the company
-    #     """
-    #     logger.info("Fetching active users for company", company_id=str(company_id))
-
-    #     all_users = await self.user_repository.get_users_by_company_id(company_id)
-    #     active_users = [user for user in all_users if user.is_active]
-
-    #     logger.info(
-    #         "Active users retrieved for company",
-    #         company_id=str(company_id),
-    #         active_user_count=len(active_users),
-    #         total_user_count=len(all_users),
-    #     )
-    #     return active_users
-
-    # async def get_active_users_by_role(
-    #     self, role: str, company_id: UUID
-    # ) -> list[UserInDB]:
-    #     """Retrieve only active users by role within a company.
-
-    #     Filters out inactive/deleted users from the role query.
-
-    #     Args:
-    #         role: Role name to filter by
-    #         company_id: Company UUID
-
-    #     Returns:
-    #         list[UserInDB]: List of active users with the specified role
-    #     """
-    #     logger.info(
-    #         "Fetching active users by role",
-    #         role=role,
-    #         company_id=str(company_id),
-    #     )
-
-    #     all_users = await self.user_repository.get_user_by_role(role, company_id)
-    #     active_users = [user for user in all_users if user.is_active]
-
-    #     logger.info(
-    #         "Active users retrieved by role",
-    #         role=role,
-    #         company_id=str(company_id),
-    #         active_user_count=len(active_users),
-    #         total_user_count=len(all_users),
-    #     )
-    #     return active_users

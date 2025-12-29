@@ -1,123 +1,109 @@
 """
-Role models for database and API operations.
-
-This module contains Pydantic models for role data validation,
-including database representations, API requests, and responses.
+Pydantic models for Role entity.
 """
 
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
+
 from pydantic import BaseModel, Field, field_validator
 
 
-class RoleInDB(BaseModel):
-    """Role model representing database record."""
+class RoleCreate(BaseModel):
+    """Model for creating a new role."""
 
-    name: str
-    description: Optional[str]
-    permissions: list[str]
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-
-
-# Request Models
-
-
-class CreateRoleRequest(BaseModel):
-    """Request model for creating a new role."""
-
-    company_id: UUID = Field(..., description="UUID of the company")
-    name: str = Field(..., min_length=1, max_length=100, description="Name of the role")
-    description: Optional[str] = Field(
-        None, max_length=500, description="Description of the role"
+    name: str = Field(..., min_length=1, max_length=32, description="Role name")
+    description: Optional[str] = Field(None, description="Role description")
+    permissions: list[str] = Field(
+        default_factory=list, description="List of permissions"
     )
-    permissions: Optional[list[str]] = Field(
-        default=None, description="List of permissions"
-    )
+    is_active: bool = Field(default=True, description="Whether the role is active")
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def validate_permissions(cls, v):
+        """Validate permissions field."""
+        if v is None:
+            return []
+        if isinstance(v, list):
+            # Ensure all permissions are valid strings and at most 64 chars
+            for perm in v:
+                if not isinstance(perm, str):
+                    raise ValueError("All permissions must be strings")
+                if len(perm) > 64:
+                    raise ValueError("Permission length cannot exceed 64 characters")
+            return v
+        raise ValueError("Permissions must be a list")
 
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
-        """Validate and clean role name."""
+        """Validate and normalize role name."""
         if not v or not v.strip():
-            raise ValueError("Role name cannot be empty or whitespace")
+            raise ValueError("Role name cannot be empty")
         return v.strip()
 
-    @field_validator("description")
+
+class RoleUpdate(BaseModel):
+    """Model for updating an existing role."""
+
+    description: Optional[str] = None
+    permissions: Optional[list[str]] = None
+
+    @field_validator("permissions", mode="before")
     @classmethod
-    def validate_description(cls, v: Optional[str]) -> Optional[str]:
-        """Validate and clean description."""
-        if v is not None:
-            if v.strip() == "":
-                raise ValueError("Description cannot be empty string")
-            return v.strip()
-        return v
-
-    @field_validator("permissions")
-    @classmethod
-    def validate_permissions(cls, v: Optional[list[str]]) -> Optional[list[str]]:
-        """Validate and clean permissions list."""
-        if v is not None:
-            if not isinstance(v, list):
-                raise ValueError("Permissions must be a list")
-            # Remove duplicates and empty strings
-            cleaned = list(set([p.strip() for p in v if p and p.strip()]))
-            if not cleaned and v:
-                raise ValueError("Permissions list cannot contain only empty values")
-            return cleaned if cleaned else None
-        return v
+    def validate_permissions(cls, v):
+        """Validate permissions field."""
+        if v is None:
+            return None
+        if isinstance(v, list):
+            # Ensure all permissions are valid strings and at most 64 chars
+            for perm in v:
+                if not isinstance(perm, str):
+                    raise ValueError("All permissions must be strings")
+                if len(perm) > 64:
+                    raise ValueError("Permission length cannot exceed 64 characters")
+            return v
+        raise ValueError("Permissions must be a list")
 
 
-class UpdateRoleRequest(BaseModel):
-    """Request model for updating a role."""
+class RoleInDB(BaseModel):
+    """Model for Role as stored in database."""
 
-    description: Optional[str] = Field(
-        None, max_length=500, description="New description"
+    name: str = Field(..., description="Role name")
+    description: Optional[str] = Field(None, description="Role description")
+    permissions: list[str] = Field(
+        default_factory=list, description="List of permissions"
     )
-    permissions: Optional[list[str]] = Field(None, description="New permissions list")
+    is_active: bool = Field(..., description="Whether the role is active")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
 
-    @field_validator("description")
-    @classmethod
-    def validate_description(cls, v: Optional[str]) -> Optional[str]:
-        """Validate and clean description."""
-        if v is not None:
-            if v.strip() == "":
-                raise ValueError("Description cannot be empty string")
-            return v.strip()
-        return v
-
-    @field_validator("permissions")
-    @classmethod
-    def validate_permissions(cls, v: Optional[list[str]]) -> Optional[list[str]]:
-        """Validate and clean permissions list."""
-        if v is not None:
-            if not isinstance(v, list):
-                raise ValueError("Permissions must be a list")
-            # Remove duplicates and empty strings
-            cleaned = list(set([p.strip() for p in v if p and p.strip()]))
-            if not cleaned and v:
-                raise ValueError("Permissions list cannot contain only empty values")
-            return cleaned if cleaned else None
-        return v
-
-    def has_updates(self) -> bool:
-        """Check if at least one field is provided for update."""
-        return self.description is not None or self.permissions is not None
-
-
-# Response Models
+    class Config:
+        from_attributes = True
 
 
 class RoleResponse(BaseModel):
-    """Response model for a single role."""
+    """Model for Role API response."""
 
-    name: str = Field(..., description="Name of the role")
-    description: Optional[str] = Field(None, description="Description of the role")
-    permissions: list[str] = Field(..., description="List of permissions")
-    is_active: bool = Field(..., description="Whether the role is active")
-    created_at: datetime = Field(..., description="Timestamp when role was created")
-    updated_at: datetime = Field(
-        ..., description="Timestamp when role was last updated"
+    name: str = Field(..., description="Role name")
+    description: Optional[str] = Field(None, description="Role description")
+    permissions: list[str] = Field(
+        default_factory=list, description="List of permissions"
     )
+    is_active: bool = Field(..., description="Whether the role is active")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class RoleListItem(BaseModel):
+    """Minimal model for Role in list views to optimize performance."""
+
+    name: str = Field(..., description="Role name")
+    description: Optional[str] = Field(None, description="Role description")
+    is_active: bool = Field(..., description="Whether the role is active")
+
+    class Config:
+        from_attributes = True

@@ -13,9 +13,11 @@ from api.lifespan import lifespan
 from api.middleware import ContextMiddleware, LoggingMiddleware, RequestIDMiddleware
 from api.models.errors import HTTPException
 from api.settings import get_settings
+from api.controller.company import router as company_router
 from api.controller.role import router as role_router
 from api.controller.area import router as area_router
-from api.controller.company import router as company_router
+from api.controller.route import router as route_router
+from api.controller.route_assignment import router as route_assignment_router
 from api.controller.user import router as user_router
 from api.controller.auth import router as auth_router
 
@@ -60,9 +62,11 @@ def create_app() -> FastAPI:
     # Add request logging middleware
 
     # Include routers here
+    app.include_router(company_router, prefix="/api/v1")
     app.include_router(role_router, prefix="/api/v1")
     app.include_router(area_router, prefix="/api/v1")
-    app.include_router(company_router, prefix="/api/v1")
+    app.include_router(route_router, prefix="/api/v1")
+    app.include_router(route_assignment_router, prefix="/api/v1")
     app.include_router(user_router, prefix="/api/v1")
     app.include_router(auth_router, prefix="/api/v1")
 

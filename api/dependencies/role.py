@@ -1,15 +1,23 @@
-from api.repository.role import RoleRepository
-from api.service.role import RoleService
-from api.database import get_db_pool
-from fastapi.param_functions import Depends
-from api.database import DatabasePool
 from typing import Annotated
+from fastapi import Depends
+from api.service.role import RoleService
+from api.dependencies.common import CompanyIDDep,DatabasePoolDep
 
 
-# Dependency to get role service
 async def get_role_service(
-    db: Annotated[DatabasePool, Depends(get_db_pool, scope="function")],
+    db_pool: DatabasePoolDep,
+    company_id: CompanyIDDep
 ) -> RoleService:
-    """Dependency to create and return RoleService instance."""
-    role_repository = RoleRepository(db)
-    return RoleService(role_repository)
+    """
+    Dependency to get RoleService instance.
+
+    Args:
+        db_pool: Database pool from dependency
+        company_id: Company UUID from path parameter
+
+    Returns:
+        RoleService instance configured for the tenant
+    """
+    return RoleService(db_pool, company_id)
+
+RoleServiceDep = Annotated[RoleService, Depends(get_role_service)]
