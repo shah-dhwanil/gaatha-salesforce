@@ -37,6 +37,20 @@ from api.models.route_assignment import (
     RouteAssignmentResponse,
     RouteAssignmentUpdate,
 )
+from api.models.route_log import (
+    RouteLogCreate,
+    RouteLogInDB,
+    RouteLogListItem,
+    RouteLogResponse,
+    RouteLogUpdate,
+)
+from api.models.shop_category import (
+    ShopCategoryCreate,
+    ShopCategoryInDB,
+    ShopCategoryListItem,
+    ShopCategoryResponse,
+    ShopCategoryUpdate,
+)
 
 __all__ = [
     # Base models
@@ -71,4 +85,16 @@ __all__ = [
     "RouteAssignmentResponse",
     "RouteAssignmentListItem",
     "RouteAssignmentDetailItem",
+    # Route log models
+    "RouteLogCreate",
+    "RouteLogUpdate",
+    "RouteLogInDB",
+    "RouteLogResponse",
+    "RouteLogListItem",
+    # Shop category models
+    "ShopCategoryCreate",
+    "ShopCategoryUpdate",
+    "ShopCategoryInDB",
+    "ShopCategoryResponse",
+    "ShopCategoryListItem",
 ]

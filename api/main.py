@@ -3,7 +3,7 @@ from api.settings import get_settings
 from api.migrations import MigrationManager
 def main():
     settings = get_settings()
-    #MigrationManager.apply_company_migrations(settings.POSTGRES, "_019b368a7f187fd19501ae8814b5c588_")
+    MigrationManager.apply_company_migrations(settings.POSTGRES, "_019b368a7f187fd19501ae8814b5c588_")
     run(
         "api.app:app",
         host=settings.SERVER.HOST,

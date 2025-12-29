@@ -32,6 +32,17 @@ from api.exceptions.route_assignment import (
     RouteAssignmentNotFoundException,
     RouteAssignmentOperationException,
 )
+from api.exceptions.route_log import (
+    RouteLogNotFoundException,
+    RouteLogOperationException,
+    RouteLogValidationException,
+)
+from api.exceptions.shop_category import (
+    ShopCategoryAlreadyExistsException,
+    ShopCategoryNotFoundException,
+    ShopCategoryOperationException,
+    ShopCategoryValidationException,
+)
 from api.exceptions.user import (
     UserAlreadyExistsException,
     UserException,
@@ -67,6 +78,15 @@ __all__ = [
     "RouteAssignmentOperationException",
     "InvalidDateRangeException",
     "RouteAssignmentConflictException",
+    # Route log exceptions
+    "RouteLogNotFoundException",
+    "RouteLogValidationException",
+    "RouteLogOperationException",
+    # Shop category exceptions
+    "ShopCategoryNotFoundException",
+    "ShopCategoryAlreadyExistsException",
+    "ShopCategoryValidationException",
+    "ShopCategoryOperationException",
     # User exceptions
     "UserNotFoundException",
     "UserAlreadyExistsException",

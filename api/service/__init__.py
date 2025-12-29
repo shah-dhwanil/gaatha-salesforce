@@ -9,6 +9,8 @@ from .company import CompanyService
 from .role import RoleService
 from .route import RouteService
 from .route_assignment import RouteAssignmentService
+from .route_log import RouteLogService
+from .shop_category import ShopCategoryService
 from .user import UserService
 
 __all__ = [
@@ -17,5 +19,7 @@ __all__ = [
     "RoleService",
     "RouteService",
     "RouteAssignmentService",
+    "RouteLogService",
+    "ShopCategoryService",
     "UserService",
 ]

@@ -19,3 +19,8 @@ CREATE TABLE IF NOT EXISTS route_assignment(
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_route_user_active ON route_assignment (route_id, user_id) WHERE is_active = true;
+
+CREATE TRIGGER route_assignment_set_updated_at
+    BEFORE UPDATE ON route_assignment
+    FOR EACH ROW
+    EXECUTE FUNCTION trigger_set_updated_at();

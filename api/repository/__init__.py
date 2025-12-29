@@ -9,6 +9,8 @@ from api.repository.area import AreaRepository
 from api.repository.role import RoleRepository
 from api.repository.route import RouteRepository
 from api.repository.route_assignment import RouteAssignmentRepository
+from api.repository.route_log import RouteLogRepository
+from api.repository.shop_category import ShopCategoryRepository
 from api.repository.user import UserRepository
 
 __all__ = [
@@ -16,6 +18,8 @@ __all__ = [
     "RoleRepository",
     "RouteRepository",
     "RouteAssignmentRepository",
+    "RouteLogRepository",
+    "ShopCategoryRepository",
     "UserRepository",
 ]
 
