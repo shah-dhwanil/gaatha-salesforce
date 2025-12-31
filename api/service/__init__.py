@@ -12,6 +12,7 @@ from .route_assignment import RouteAssignmentService
 from .route_log import RouteLogService
 from .shop_category import ShopCategoryService
 from .user import UserService
+from .retailer import RetailerService
 
 __all__ = [
     "AreaService",
@@ -22,4 +23,5 @@ __all__ = [
     "RouteLogService",
     "ShopCategoryService",
     "UserService",
+    "RetailerService",
 ]

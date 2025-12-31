@@ -51,6 +51,14 @@ from api.models.shop_category import (
     ShopCategoryResponse,
     ShopCategoryUpdate,
 )
+from api.models.retailer import (
+    RetailerCreate,
+    RetailerDetailItem,
+    RetailerInDB,
+    RetailerListItem,
+    RetailerResponse,
+    RetailerUpdate,
+)
 
 __all__ = [
     # Base models
@@ -97,4 +105,11 @@ __all__ = [
     "ShopCategoryInDB",
     "ShopCategoryResponse",
     "ShopCategoryListItem",
+    # Retailer models
+    "RetailerCreate",
+    "RetailerUpdate",
+    "RetailerInDB",
+    "RetailerResponse",
+    "RetailerListItem",
+    "RetailerDetailItem",
 ]

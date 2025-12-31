@@ -206,7 +206,7 @@ class RouteService:
             offset: Number of routes to skip (default: 0)
 
         Returns:
-            Tuple of (list of routes with minimal data, total count)
+            Tuple of (list of routes with minimal data including retailer count, total count)
 
         Raises:
             RouteValidationException: If validation fails

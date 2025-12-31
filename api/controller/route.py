@@ -270,7 +270,8 @@ async def list_routes(
     """
     List all routes with pagination and filtering.
 
-    Returns optimized route data with minimal hierarchical information (division, area, region).
+    Returns optimized route data with minimal hierarchical information (division, area, region)
+    and retailer count for each route.
     Use the detail endpoint (GET /{route_id}) to get complete route information.
 
     **Filters:**

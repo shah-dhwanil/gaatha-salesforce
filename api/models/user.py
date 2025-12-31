@@ -1,16 +1,16 @@
 from datetime import datetime
-from token import OP
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 from pydantic.functional_validators import model_validator
 
-class BannkDetails(BaseModel):
+class BankDetails(BaseModel):
     """Bank details model representing database record."""
-
     account_number: str
     account_name: str
     bank_name: str
+    bank_branch: str
+    account_type: Literal["SAVINGS", "CURRENT"]
     ifsc_code: str
 
 class UserInDB(BaseModel):
@@ -23,7 +23,7 @@ class UserInDB(BaseModel):
     company_id: Optional[UUID]
     role:Optional[str]
     area_id: Optional[int]
-    bank_details: Optional[BannkDetails]
+    bank_details: Optional[BankDetails]
     is_active: bool
     is_super_admin: bool = Field(
         default=False, description="Indicates if the user is a super admin"
@@ -46,7 +46,7 @@ class UserCreate(BaseModel):
     company_id: Optional[UUID] = Field(None, description="UUID of the company the user belongs to")
     role: Optional[str] = Field(None, description="Role of the user")
     area_id: Optional[int] = Field(None, description="Area of the user")
-    bank_details: Optional[BannkDetails] = Field(None, description="Bank details of the user")
+    bank_details: Optional[BankDetails] = Field(None, description="Bank details of the user")
     is_super_admin: bool = Field(
         default=False, description="Indicates if the user is a super admin"
     )
@@ -103,7 +103,7 @@ class UserUpdate(BaseModel):
         None, min_length=1, max_length=100, description="Role of the user"
     )
     area_id: Optional[int] = Field(None, description="Area assignment")
-    bank_details: Optional[BannkDetails] = Field(None, description="Bank details of the user")
+    bank_details: Optional[BankDetails] = Field(None, description="Bank details of the user")
     company_id: Optional[UUID] = Field(None, description="UUID of the company (for schema context)")
 
     @field_validator("name")
@@ -165,7 +165,7 @@ class UserResponse(BaseModel):
     company_id: Optional[UUID] = Field(..., description="Company ID of the user")
     role: Optional[str] = Field(..., description="Role of the user")
     area_id: Optional[int] = Field(..., description="Area ID of the user")
-    bank_details: Optional[BannkDetails] = Field(..., description="Bank details of the user")
+    bank_details: Optional[BankDetails] = Field(..., description="Bank details of the user")
     is_super_admin: bool = Field(..., description="Whether the user is a super admin")
     is_active: bool = Field(..., description="Whether the user is active")
     created_at: datetime = Field(..., description="Creation timestamp")
@@ -184,7 +184,7 @@ class UserDetailsResponse(BaseModel):
     area_id: Optional[int] = Field(..., description="Area ID of the user")
     area_name: Optional[str] = Field(..., description="Name of the area asscociated with the user")
     area_type: Optional[str] = Field(..., description="Type of the area asscociated with the user")
-    bank_details: Optional[BannkDetails] = Field(..., description="Bank details of the user")
+    bank_details: Optional[BankDetails] = Field(..., description="Bank details of the user")
     is_super_admin: bool = Field(..., description="Whether the user is a super admin")
     is_active: bool = Field(..., description="Whether the user is active")
     created_at: datetime = Field(..., description="Creation timestamp")

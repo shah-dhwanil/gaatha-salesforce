@@ -20,8 +20,10 @@ from api.controller.route import router as route_router
 from api.controller.route_assignment import router as route_assignment_router
 from api.controller.route_log import router as route_log_router
 from api.controller.shop_category import router as shop_category_router
+from api.controller.retailer import router as retailer_router
 from api.controller.user import router as user_router
 from api.controller.auth import router as auth_router
+from api.controller.distributor import router as distributor_router
 
 # Load settings
 settings = get_settings()
@@ -71,9 +73,10 @@ def create_app() -> FastAPI:
     app.include_router(route_assignment_router, prefix="/api/v1")
     app.include_router(route_log_router, prefix="/api/v1")
     app.include_router(shop_category_router, prefix="/api/v1")
+    app.include_router(retailer_router, prefix="/api/v1")
     app.include_router(user_router, prefix="/api/v1")
     app.include_router(auth_router, prefix="/api/v1")
-
+    app.include_router(distributor_router, prefix="/api/v1")
     return app
 
 

@@ -7,7 +7,7 @@ class UserAlreadyExistsException(AppException):
 
 class UserNotFoundException(AppException):
     """Exception raised when a user is not found."""
-    def __init__(self, field: str, message: str):
+    def __init__(self, field: str, message: str="User not found"):
         super().__init__(ErrorTypes.ResourceNotFound, message, field=field)
 
 class UserException(AppException):

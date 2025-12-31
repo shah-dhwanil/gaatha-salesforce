@@ -147,6 +147,7 @@ class RouteListItem(BaseModel):
     is_general: bool = Field(..., description="Whether the route is general")
     is_modern: bool = Field(..., description="Whether the route is modern")
     is_horeca: bool = Field(..., description="Whether the route is horeca")
+    retailer_count: int = Field(..., description="Number of retailers in the route")
     is_active: bool = Field(..., description="Whether the route is active")
 
 

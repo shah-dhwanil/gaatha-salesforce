@@ -7,7 +7,7 @@ from api.exceptions.area import AreaNotFoundException
 from api.exceptions.company import CompanyNotFoundException
 from api.exceptions.role import RoleNotFoundException
 from api.exceptions.user import UserAlreadyExistsException, UserException, UserNotFoundException
-from api.models.user import BannkDetails, UserCreate, UserDetailsResponse, UserInDB, UserListResponse, UserUpdate
+from api.models.user import BankDetails, UserCreate, UserDetailsResponse, UserInDB, UserListResponse, UserUpdate
 from asyncpg import Connection, UniqueViolationError, ForeignKeyViolationError
 import structlog
 
@@ -107,7 +107,7 @@ class UserRepository:
             is_super_admin=rs1["is_super_admin"],
             is_active=rs1["is_active"],
             created_at=rs2["created_at"],
-            bank_details=BannkDetails.model_validate_json(rs2["bank_details"]),
+            bank_details=BankDetails.model_validate_json(rs2["bank_details"]),
             updated_at=rs2["updated_at"],
         )
     async def __create_super_admin(self, connection: Connection, user: UserCreate) -> UserInDB:
@@ -211,7 +211,7 @@ class UserRepository:
             area_id=rs["area_id"],
             area_name=rs["area_name"],
             area_type=rs["area_type"],
-            bank_details=BannkDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
+            bank_details=BankDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
         )
     async def get_user_by_id(self, user_id: UUID, connection: Optional[Connection] = None) -> UserDetailsResponse:
         """Get a user by id."""
@@ -252,7 +252,7 @@ class UserRepository:
             area_id=rs["area_id"],
             area_name=rs["area_name"],
             area_type=rs["area_type"],
-            bank_details=BannkDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
+            bank_details=BankDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
         )
     async def get_users_by_company_id(self, company_id: UUID, is_active: Optional[bool] = None,limit: int = 20, offset: int = 0, connection: Optional[Connection] = None) -> list[UserListResponse]:
         """Get users by company id."""
@@ -487,7 +487,7 @@ class UserRepository:
             company_id=rs1["company_id"],
             role=rs2["role"],
             area_id=rs2["area_id"],
-            bank_details=BannkDetails.model_validate_json(rs2["bank_details"]) if rs2["bank_details"] else None,
+            bank_details=BankDetails.model_validate_json(rs2["bank_details"]) if rs2["bank_details"] else None,
             is_active=rs1["is_active"],
             is_super_admin=rs1["is_super_admin"],
             created_at=rs2["created_at"],

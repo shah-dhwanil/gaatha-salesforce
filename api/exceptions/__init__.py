@@ -43,6 +43,12 @@ from api.exceptions.shop_category import (
     ShopCategoryOperationException,
     ShopCategoryValidationException,
 )
+from api.exceptions.retailer import (
+    RetailerAlreadyExistsException,
+    RetailerNotFoundException,
+    RetailerOperationException,
+    RetailerValidationException,
+)
 from api.exceptions.user import (
     UserAlreadyExistsException,
     UserException,
@@ -87,6 +93,11 @@ __all__ = [
     "ShopCategoryAlreadyExistsException",
     "ShopCategoryValidationException",
     "ShopCategoryOperationException",
+    # Retailer exceptions
+    "RetailerNotFoundException",
+    "RetailerAlreadyExistsException",
+    "RetailerValidationException",
+    "RetailerOperationException",
     # User exceptions
     "UserNotFoundException",
     "UserAlreadyExistsException",

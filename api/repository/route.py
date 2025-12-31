@@ -311,7 +311,7 @@ class RouteRepository:
     ) -> list[RouteListItem]:
         """
         Private method to list routes with a provided connection.
-        Returns minimal data to optimize performance.
+        Returns minimal data to optimize performance including retailer count per route.
 
         Args:
             connection: Database connection
@@ -324,7 +324,7 @@ class RouteRepository:
             offset: Number of routes to skip
 
         Returns:
-            List of routes with minimal data
+            List of routes with minimal data including retailer count
 
         Raises:
             RouteOperationException: If listing fails
@@ -334,11 +334,14 @@ class RouteRepository:
 
             # Build dynamic query
             query = """
-                SELECT rs.id, rs.name, rs.code, rs.is_general, rs.is_modern, rs.is_horeca, rs.area_id,d.name as division_name, a.name as area_name, r.name as region_name,rs.is_active
+                SELECT rs.id, rs.name, rs.code, rs.is_general, rs.is_modern, rs.is_horeca, rs.area_id,
+                       d.name as division_name, a.name as area_name, r.name as region_name, rs.is_active,
+                       COUNT(ret.id) as retailer_count
                 FROM routes rs
                 INNER JOIN areas d ON rs.area_id = d.id
                 INNER JOIN areas a ON a.id = d.area_id
                 INNER JOIN areas r ON r.id = a.region_id
+                LEFT JOIN retailer ret ON ret.route_id = rs.id AND ret.is_active = true
 
             """
             params = []
@@ -373,6 +376,12 @@ class RouteRepository:
 
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
+
+            # Add GROUP BY clause for aggregation
+            query += """
+                GROUP BY rs.id, rs.name, rs.code, rs.is_general, rs.is_modern, rs.is_horeca,
+                         rs.area_id, d.name, a.name, r.name, rs.is_active
+            """
 
             # Add ordering
             query += " ORDER BY rs.code ASC"
@@ -416,7 +425,7 @@ class RouteRepository:
     ) -> list[RouteListItem]:
         """
         List all routes with optional filtering.
-        Returns minimal data to optimize performance.
+        Returns minimal data to optimize performance including retailer count per route.
 
         Args:
             area_id: Filter by area ID
@@ -429,7 +438,7 @@ class RouteRepository:
             connection: Optional database connection. If not provided, a new one is acquired.
 
         Returns:
-            List of routes with minimal data
+            List of routes with minimal data including retailer count
 
         Raises:
             RouteOperationException: If listing fails
