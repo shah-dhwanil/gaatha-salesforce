@@ -12,6 +12,12 @@ from api.exceptions.area import (
     AreaNotFoundException,
     AreaOperationException,
 )
+from api.exceptions.brand import (
+    BrandAlreadyExistsException,
+    BrandNotFoundException,
+    BrandOperationException,
+    BrandValidationException,
+)
 from api.exceptions.role import (
     RoleAlreadyExistsException,
     RoleNotFoundException,
@@ -67,6 +73,11 @@ __all__ = [
     "AreaAlreadyExistsException",
     "AreaOperationException",
     "AreaInvalidHierarchyException",
+    # Brand exceptions
+    "BrandNotFoundException",
+    "BrandAlreadyExistsException",
+    "BrandValidationException",
+    "BrandOperationException",
     # Role exceptions
     "RoleNotFoundException",
     "RoleAlreadyExistsException",

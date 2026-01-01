@@ -5,6 +5,7 @@ This module contains service classes that handle business logic
 for different entities, acting as intermediaries between handlers and repositories.
 """
 from .area import AreaService
+from .brand import BrandService
 from .company import CompanyService
 from .role import RoleService
 from .route import RouteService
@@ -16,6 +17,7 @@ from .retailer import RetailerService
 
 __all__ = [
     "AreaService",
+    "BrandService",
     "CompanyService",
     "RoleService",
     "RouteService",

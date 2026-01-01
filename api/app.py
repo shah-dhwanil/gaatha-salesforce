@@ -16,6 +16,8 @@ from api.settings import get_settings
 from api.controller.company import router as company_router
 from api.controller.role import router as role_router
 from api.controller.area import router as area_router
+from api.controller.brand import router as brand_router
+from api.controller.brand_category import router as brand_category_router
 from api.controller.route import router as route_router
 from api.controller.route_assignment import router as route_assignment_router
 from api.controller.route_log import router as route_log_router
@@ -69,6 +71,8 @@ def create_app() -> FastAPI:
     app.include_router(company_router, prefix="/api/v1")
     app.include_router(role_router, prefix="/api/v1")
     app.include_router(area_router, prefix="/api/v1")
+    app.include_router(brand_router, prefix="/api/v1")
+    app.include_router(brand_category_router, prefix="/api/v1")
     app.include_router(route_router, prefix="/api/v1")
     app.include_router(route_assignment_router, prefix="/api/v1")
     app.include_router(route_log_router, prefix="/api/v1")
