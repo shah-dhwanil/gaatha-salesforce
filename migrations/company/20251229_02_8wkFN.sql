@@ -11,9 +11,9 @@ CREATE TABLE IF NOT EXISTS route_logs(
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_route_logs PRIMARY KEY (id),
-    CONSTRAINT fk_route_logs_route_assignment_id FOREIGN KEY (route_assignment_id) REFERENCES route_assignments(id),
+    CONSTRAINT fk_route_logs_route_assignment_id FOREIGN KEY (route_assignment_id) REFERENCES route_assignment(id),
     CONSTRAINT fk_route_logs_co_worker_id FOREIGN KEY (co_worker_id) REFERENCES members(id),
-    CONSTRAINT check_valid_time_range CHECK (end_time IS NULL OR end_time > start_time),
+    CONSTRAINT check_valid_time_range CHECK (end_time IS NULL OR end_time > start_time)
 );
 
 CREATE INDEX IF NOT EXISTS idx_route_logs_route_assignment_id ON route_logs(route_assignment_id);
