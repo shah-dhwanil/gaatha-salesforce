@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from api.models.docuemnts import DocumentInDB
 from api.models.user import BankDetails
@@ -16,6 +16,7 @@ class RetailerCreate(BaseModel):
     """Model for creating a new retailer."""
 
     name: str = Field(..., min_length=1, max_length=255, description="Retailer name")
+    code: Optional[str] = Field(None, min_length=1, max_length=50, description="Retailer code")
     contact_person_name: str = Field(..., min_length=1, max_length=255, description="Contact person name")
     mobile_number: str = Field(..., min_length=10, max_length=15, description="Mobile number")
     email: Optional[EmailStr] = Field(None, description="Email address")
@@ -31,6 +32,9 @@ class RetailerCreate(BaseModel):
     route_id: int = Field(..., description="Route ID")
     bank_details: BankDetails = Field(..., description="Bank details")
     is_verified: bool = Field(default=False, description="Whether the retailer is verified")
+    is_type_a: bool = Field(..., description="Whether the retailer is type A")
+    is_type_b: bool = Field(..., description="Whether the retailer is type B")
+    is_type_c: bool = Field(..., description="Whether the retailer is type C")
 
     @field_validator("name", "contact_person_name", "address")
     @classmethod
@@ -58,6 +62,14 @@ class RetailerCreate(BaseModel):
             raise ValueError("License number cannot be empty string")
         return v.strip().upper()
 
+    @model_validator(mode="after")
+    def validate_retailer_type(self):
+        """Validate that exactly one retailer type is true."""
+        type_count = sum([self.is_type_a, self.is_type_b, self.is_type_c])
+        if type_count != 1:
+            raise ValueError("Exactly one of is_type_a, is_type_b, or is_type_c must be true")
+        return self
+
 
 class RetailerUpdate(BaseModel):
     """Model for updating an existing retailer."""
@@ -75,6 +87,9 @@ class RetailerUpdate(BaseModel):
     map_link: Optional[str] = Field(None, description="Map link")
     route_id: Optional[int] = Field(None, description="Route ID")
     is_verified: Optional[bool] = Field(None, description="Whether the retailer is verified")
+    is_type_a: Optional[bool] = Field(None, description="Whether the retailer is type A")
+    is_type_b: Optional[bool] = Field(None, description="Whether the retailer is type B")
+    is_type_c: Optional[bool] = Field(None, description="Whether the retailer is type C")
 
     @field_validator("name", "contact_person_name", "address")
     @classmethod
@@ -106,6 +121,21 @@ class RetailerUpdate(BaseModel):
             raise ValueError("License number cannot be empty string")
         return v.strip().upper()
 
+    @model_validator(mode="after")
+    def validate_retailer_type(self):
+        """Validate that exactly one retailer type is true when any type field is provided."""
+        # Only validate if at least one type field is being updated
+        if any(field is not None for field in [self.is_type_a, self.is_type_b, self.is_type_c]):
+            # If any type field is provided, ensure that exactly one is true
+            # Note: This validation is partial - full validation requires checking current DB state
+            # The service layer will handle complete validation
+            provided_types = [val for val in [self.is_type_a, self.is_type_b, self.is_type_c] if val is not None]
+            if len(provided_types) == 3:  # All three are being updated
+                type_count = sum(provided_types)
+                if type_count != 1:
+                    raise ValueError("Exactly one of is_type_a, is_type_b, or is_type_c must be true")
+        return self
+
 
 class RetailerInDB(BaseModel):
     """Model for Retailer as stored in database."""
@@ -128,6 +158,9 @@ class RetailerInDB(BaseModel):
     route_id: int = Field(..., description="Route ID")
     is_verified: bool = Field(..., description="Whether the retailer is verified")
     is_active: bool = Field(..., description="Whether the retailer is active")
+    is_type_a: bool = Field(..., description="Whether the retailer is type A")
+    is_type_b: bool = Field(..., description="Whether the retailer is type B")
+    is_type_c: bool = Field(..., description="Whether the retailer is type C")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -156,6 +189,9 @@ class RetailerResponse(BaseModel):
     route_id: int = Field(..., description="Route ID")
     is_verified: bool = Field(..., description="Whether the retailer is verified")
     is_active: bool = Field(..., description="Whether the retailer is active")
+    is_type_a: bool = Field(..., description="Whether the retailer is type A")
+    is_type_b: bool = Field(..., description="Whether the retailer is type B")
+    is_type_c: bool = Field(..., description="Whether the retailer is type C")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 
@@ -177,6 +213,9 @@ class RetailerListItem(BaseModel):
     store_images: Optional[dict] = Field(None, description="Store images")
     is_verified: bool = Field(..., description="Whether the retailer is verified")
     is_active: bool = Field(..., description="Whether the retailer is active")
+    is_type_a: bool = Field(..., description="Whether the retailer is type A")
+    is_type_b: bool = Field(..., description="Whether the retailer is type B")
+    is_type_c: bool = Field(..., description="Whether the retailer is type C")
 
     class Config:
         from_attributes = True
@@ -206,6 +245,9 @@ class RetailerDetailItem(BaseModel):
     bank_details: BankDetails = Field(..., description="Bank details")
     is_verified: bool = Field(..., description="Whether the retailer is verified")
     is_active: bool = Field(..., description="Whether the retailer is active")
+    is_type_a: bool = Field(..., description="Whether the retailer is type A")
+    is_type_b: bool = Field(..., description="Whether the retailer is type B")
+    is_type_c: bool = Field(..., description="Whether the retailer is type C")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
 

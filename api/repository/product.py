@@ -600,8 +600,8 @@ class ProductRepository:
                             (
                                 SELECT pp.mrp
                                 FROM product_prices pp
-                                WHERE pp.product_id = p.id
                                 INNER JOIN areas a ON pp.area_id = a.id
+                                WHERE pp.product_id = p.id
                                 AND pp.is_active = TRUE
                                 ORDER BY get_area_priority(a.type) ASC
                                 LIMIT 1
@@ -647,7 +647,7 @@ class ProductRepository:
                 params.append(offset)
 
             rows = await connection.fetch(query, *params)
-
+            print(rows)
             products = []
             for row in rows:
                 products.append(

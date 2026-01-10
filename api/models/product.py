@@ -77,7 +77,7 @@ class ProductPriceUpdate(BaseModel):
 
 # Product Visibility Models
 class ProductVisibilityCreate(BaseModel):
-    area_id: int
+    area_id: Optional[int] = None
     for_general: bool = False
     for_modern: bool = False
     for_horeca: bool = False
@@ -89,7 +89,7 @@ class ProductVisibilityCreate(BaseModel):
 class ProductVisibilityInDB(BaseModel):
     id: int
     product_id: int
-    area_id: int
+    area_id: Optional[int] = None
     for_general: bool
     for_modern: bool
     for_horeca: bool

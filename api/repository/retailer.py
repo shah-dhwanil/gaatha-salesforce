@@ -88,13 +88,15 @@ class RetailerRepository:
                 INSERT INTO retailer (
                     id,name, code, contact_person_name, mobile_number, email,
                     gst_no, pan_no, license_no, address, category_id,
-                    pin_code, map_link, documents, store_images, route_id
+                    pin_code, map_link, documents, store_images, route_id,
+                    is_type_a, is_type_b, is_type_c
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,$16)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
                 RETURNING id, name, code, contact_person_name, mobile_number, email,
                           gst_no, pan_no, license_no, address, category_id,
                           pin_code, map_link, documents, store_images, route_id,
-                          is_verified, is_active, created_at, updated_at
+                          is_verified, is_active, is_type_a, is_type_b, is_type_c,
+                          created_at, updated_at
                 """,
                 r_id,
                 retailer_data.name,
@@ -112,6 +114,9 @@ class RetailerRepository:
                 documents_json,
                 store_images_json,
                 retailer_data.route_id,
+                retailer_data.is_type_a,
+                retailer_data.is_type_b,
+                retailer_data.is_type_c,
             )
 
             logger.info(
@@ -242,7 +247,8 @@ class RetailerRepository:
                     r.email, r.gst_no, r.pan_no, r.license_no, r.address,
                     r.category_id, sc.name as category_name, r.pin_code, r.map_link,
                     r.documents, r.store_images, r.route_id, rt.name as route_name,
-                    r.is_verified, r.is_active, r.created_at, r.updated_at,
+                    r.is_verified, r.is_active, r.is_type_a, r.is_type_b, r.is_type_c,
+                    r.created_at, r.updated_at,
                     m.bank_details
                 FROM retailer r
                 INNER JOIN shop_categories sc ON r.category_id = sc.id
@@ -275,6 +281,9 @@ class RetailerRepository:
                 route_name=row["route_name"],
                 is_verified=row["is_verified"],
                 is_active=row["is_active"],
+                is_type_a=row["is_type_a"],
+                is_type_b=row["is_type_b"],
+                is_type_c=row["is_type_c"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
                 bank_details=BankDetails.model_validate_json(row["bank_details"]),
@@ -345,6 +354,7 @@ class RetailerRepository:
                     r.email, r.gst_no, r.pan_no, r.license_no, r.address,
                     r.category_id, sc.name as category_name, r.pin_code, r.map_link,
                     r.documents, r.store_images, r.route_id, rt.name as route_name,
+                    r.is_type_a, r.is_type_b, r.is_type_c,
                     r.is_verified, r.is_active, r.created_at, r.updated_at,
                     m.bank_details
                 FROM retailer r
@@ -374,6 +384,9 @@ class RetailerRepository:
                 category_name=row["category_name"],
                 pin_code=row["pin_code"],
                 map_link=row["map_link"],
+                is_type_a=row["is_type_a"],
+                is_type_b=row["is_type_b"],
+                is_type_c=row["is_type_c"],
                 route_id=row["route_id"],
                 route_name=row["route_name"],
                 is_verified=row["is_verified"],
@@ -456,7 +469,8 @@ class RetailerRepository:
                 SELECT 
                     r.id, r.name, r.code, r.contact_person_name,
                     r.mobile_number, r.address, r.route_id,
-                    rt.name as route_name, r.store_images, r.is_verified, r.is_active
+                    rt.name as route_name, r.store_images, r.is_verified, r.is_active,
+                    r.is_type_a, r.is_type_b, r.is_type_c
                 FROM retailer r
                 INNER JOIN routes rt ON r.route_id = rt.id
             """
@@ -734,21 +748,38 @@ class RetailerRepository:
                 update_fields.append(f"is_verified = ${param_count}")
                 params.append(retailer_data.is_verified)
 
+            if retailer_data.is_type_a is not None:
+                param_count += 1
+                update_fields.append(f"is_type_a = ${param_count}")
+                params.append(retailer_data.is_type_a)
+
+            if retailer_data.is_type_b is not None:
+                param_count += 1
+                update_fields.append(f"is_type_b = ${param_count}")
+                params.append(retailer_data.is_type_b)
+
+            if retailer_data.is_type_c is not None:
+                param_count += 1
+                update_fields.append(f"is_type_c = ${param_count}")
+                params.append(retailer_data.is_type_c)
+
             if not update_fields:
                 # No fields to update, return current retailer
-                current_retailer = await self._get_retailer_by_id(retailer_id, connection)
                 # Convert to RetailerInDB by fetching without joins
                 row = await connection.fetchrow(
                     """
                     SELECT id, name, code, contact_person_name, mobile_number, email,
                            gst_no, pan_no, license_no, address, category_id,
                            pin_code, map_link, documents, store_images, route_id,
-                           is_verified, is_active, created_at, updated_at
+                           is_verified, is_active, is_type_a, is_type_b, is_type_c,
+                           created_at, updated_at
                     FROM retailer
                     WHERE id = $1
                     """,
                     retailer_id,
                 )
+                if not row:
+                    raise RetailerNotFoundException(retailer_id=retailer_id)
                 return RetailerInDB(**dict(row))
 
             param_count += 1
@@ -761,7 +792,8 @@ class RetailerRepository:
                 RETURNING id, name, code, contact_person_name, mobile_number, email,
                           gst_no, pan_no, license_no, address, category_id,
                           pin_code, map_link, documents, store_images, route_id,
-                          is_verified, is_active, created_at, updated_at
+                          is_verified, is_active, is_type_a, is_type_b, is_type_c,
+                          created_at, updated_at
             """
 
             row = await connection.fetchrow(query, *params)
@@ -876,7 +908,8 @@ class RetailerRepository:
                 SELECT id, name, code, contact_person_name, mobile_number, email,
                        gst_no, pan_no, license_no, address, category_id,
                        pin_code, map_link, documents, store_images, route_id,
-                       is_verified, is_active, created_at, updated_at
+                       is_verified, is_active, is_type_a, is_type_b, is_type_c,
+                       created_at, updated_at
                 FROM retailer
                 WHERE id = $1
                 """,
@@ -941,7 +974,8 @@ class RetailerRepository:
                 SELECT 
                     r.id, r.name, r.code, r.contact_person_name,
                     r.mobile_number, r.address, r.route_id,
-                    rt.name as route_name, r.store_images, r.is_verified, r.is_active
+                    rt.name as route_name, r.store_images, r.is_verified, r.is_active,
+                    r.is_type_a, r.is_type_b, r.is_type_c
                 FROM retailer r
                 INNER JOIN routes rt ON r.route_id = rt.id
                 WHERE r.route_id = $1 AND r.is_active = true

@@ -340,11 +340,34 @@ class RetailerService:
                     retailer_data.pin_code,
                     retailer_data.map_link,
                     retailer_data.route_id is not None,
+                    retailer_data.is_type_a is not None,
+                    retailer_data.is_type_b is not None,
+                    retailer_data.is_type_c is not None,
                 ]
             ):
                 raise RetailerValidationException(
                     message="At least one field must be provided for update",
                 )
+
+            # Validate retailer type constraint when updating types
+            if any(field is not None for field in [retailer_data.is_type_a, retailer_data.is_type_b, retailer_data.is_type_c]):
+                # If updating type fields, we need to ensure exactly one is true
+                # Get current retailer state
+                async with self.db_pool.acquire() as conn:
+                    current_retailer = await self.repository.get_retailer_by_id(retailer_id, conn)
+                    
+                    # Determine final state of type fields
+                    final_type_a = retailer_data.is_type_a if retailer_data.is_type_a is not None else current_retailer.is_type_a
+                    final_type_b = retailer_data.is_type_b if retailer_data.is_type_b is not None else current_retailer.is_type_b
+                    final_type_c = retailer_data.is_type_c if retailer_data.is_type_c is not None else current_retailer.is_type_c
+                    
+                    # Check if exactly one is true
+                    type_count = sum([final_type_a, final_type_b, final_type_c])
+                    if type_count != 1:
+                        raise RetailerValidationException(
+                            message="Exactly one of is_type_a, is_type_b, or is_type_c must be true",
+                        )
+
             if retailer_data.mobile_number is not None:
                 await self.user_service.update_user(retailer_id, UserUpdate(contact_no=retailer_data.mobile_number), self.company_id)
             if retailer_data.name is not None:

@@ -1,0 +1,6 @@
+-- 
+-- depends: 20260108_01_4YFXB
+
+ALTER TABLE retailer ADD COLUMN IF NOT EXISTS is_type_a boolean DEFAULT FALSE;
+ALTER TABLE retailer ADD COLUMN IF NOT EXISTS is_type_b boolean DEFAULT FALSE;
+ALTER TABLE retailer ADD COLUMN IF NOT EXISTS is_type_c boolean DEFAULT FALSE;
