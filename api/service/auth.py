@@ -72,7 +72,7 @@ class AuthService:
         payload = {
             "user_id": str(user_id),
             "area_id": area_id,
-            "company_id": str(company_id),
+            "company_id": str(company_id) if company_id else None,
             "role": role,
             "exp": expire,
             "iat": now,
@@ -180,7 +180,7 @@ class AuthService:
             user = AuthenticatedUser(
                 user_id=UUID(payload["user_id"]),
                 area_id=payload["area_id"],
-                company_id=UUID(payload["company_id"]),
+                company_id=UUID(payload["company_id"]) if payload.get("company_id") else None,
                 role=payload["role"],
             )
 
@@ -247,3 +247,75 @@ class AuthService:
         except Exception as e:
             logger.warning("Failed to get token expiry", error=str(e))
             return None
+
+    def generate_temporary_token(self, contact_no: str) -> str:
+        """Generate a temporary token for OTP verification.
+
+        Args:
+            contact_no: Contact number of the user
+        Returns:
+            Encoded JWT temporary token as string
+        """
+        now = datetime.now(timezone.utc)
+        expires_delta = timedelta(minutes=self.config.TEMP_TOKEN_EXPIRE_MINUTES)
+        expire = now + expires_delta
+
+        payload = {
+            "contact_no": contact_no,
+            "exp": expire,
+            "iat": now,
+            "token_type": "temporary",
+        }
+
+        token = jwt.encode(
+            payload, self.config.SECRET_KEY, algorithm=self.config.ALGORITHM
+        )
+
+        logger.info(
+            "Temporary token created",
+            contact_no=contact_no,
+            expires_at=expire.isoformat(),
+        )
+
+        return token
+    
+    def verify_temp_token(self, token: str) -> str:
+        """Verify and decode a temporary JWT token.
+
+        Args:
+            token: JWT temporary token string to verify
+        Returns:
+            contact_no extracted from the token
+        """
+        try:
+            payload = jwt.decode(
+                token, self.config.SECRET_KEY, algorithms=[self.config.ALGORITHM]
+            )
+
+            # Verify token type
+            if payload.get("token_type") != "temporary":
+                logger.warning(
+                    "Invalid token type",
+                    expected="temporary",
+                    actual=payload.get("token_type"),
+                )
+                raise UnauthorizedException("Invalid token type")
+
+            contact_no = payload["contact_no"]
+
+            logger.debug(
+                "Temporary token verified successfully",
+                contact_no=contact_no,
+            )
+
+            return contact_no
+
+        except jwt.ExpiredSignatureError:
+            logger.warning("Temporary token has expired")
+            raise UnauthorizedException("Token has expired")
+        except jwt.InvalidTokenError as e:
+            logger.warning("Invalid temporary token", error=str(e))
+            raise UnauthorizedException("Invalid token")
+        except (KeyError, ValueError) as e:
+            logger.warning("Invalid temporary token payload", error=str(e))
+            raise UnauthorizedException("Invalid token payload")

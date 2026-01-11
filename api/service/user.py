@@ -549,3 +549,113 @@ class UserService:
                 operation="activate",
             ) from e
 
+    async def get_users_by_contact_no(
+        self,
+        contact_no: str,
+    ) -> list[UserListResponse]:
+        """
+        Get users by contact number.
+
+        Args:
+            contact_no: Contact number to search
+
+        Returns:
+            List of users with the given contact number
+
+        Raises:
+            UserNotFoundException: If no users found
+            UserOperationException: If retrieval fails
+        """
+        try:
+            logger.debug(
+                "Getting users by contact number",
+                contact_no=contact_no,
+            )
+
+            users = await self.repository.get_users_by_contact_no(contact_no)
+
+            logger.debug(
+                "Users retrieved successfully",
+                contact_no=contact_no,
+                count=len(users),
+            )
+
+            return users
+
+        except UserNotFoundException:
+            logger.warning(
+                "No users found for contact number",
+                contact_no=contact_no,
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get users by contact number in service",
+                contact_no=contact_no,
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to get users: {str(e)}",
+                operation="get_by_contact_no",
+            ) from e
+    
+    async def exists_by_contact_no(
+        self,
+        contact_no: str,
+    ) -> bool:
+        """
+        Check if any user exists with the given contact number.
+
+        Args:
+            contact_no: Contact number to check
+        Returns:
+            True if user exists, False otherwise
+        """
+        return await self.repository.exists_by_contact_no(contact_no)
+    
+    async def get_user_by_contact_no_and_company(
+        self,
+        contact_no: str,
+        company_id: Optional[UUID],
+    ) -> UserDetailsResponse:
+        """
+        Get a user by contact number and company ID.
+
+        Args:
+            contact_no: Contact number of the user
+            company_id: UUID of the company
+        Returns:
+            User details
+        """
+        try:
+            logger.debug(
+                "Getting user by contact number and company",
+                contact_no=contact_no,
+                company_id=str(company_id),
+            )
+
+            user = await self.repository.get_user_by_contact_no_and_company(
+                contact_no,
+                company_id,
+            )
+
+            return user
+
+        except UserNotFoundException:
+            logger.warning(
+                "User not found by contact number and company",
+                contact_no=contact_no,
+                company_id=str(company_id),
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "Failed to get user by contact number and company in service",
+                contact_no=contact_no,
+                company_id=str(company_id),
+                error=str(e),
+            )
+            raise UserOperationException(
+                message=f"Failed to get user: {str(e)}",
+                operation="get_by_contact_no_and_company",
+            ) from e

@@ -43,6 +43,31 @@ def get_auth_service() -> AuthService:
     return AuthService(config=settings.JWT)
 
 
+async def get_temp_token(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> str:
+    """Dependency to get temporary token from Authorization header.
+
+    This dependency extracts the temporary token from the Authorization header
+    and returns it for further processing.
+
+    Args:
+        credentials: HTTP Bearer credentials from Authorization header
+        auth_service: AuthService instance (not used here but included for consistency)
+    Returns:
+        Temporary token string
+    """
+    token = credentials.credentials
+
+    if not token:
+        logger.warning("No temporary token provided in request")
+        raise UnauthorizedException("Temporary token required")
+
+    logger.debug("Temporary token extracted from request")
+    return token
+
+
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
