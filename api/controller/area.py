@@ -16,7 +16,6 @@ from api.exceptions.area import (
     AreaAlreadyExistsException,
     AreaInvalidHierarchyException,
     AreaNotFoundException,
-    AreaOperationException,
 )
 from api.models import ListResponseModel, ResponseModel
 from api.models.area import AreaCreate, AreaListItem, AreaResponse, AreaUpdate
@@ -188,7 +187,9 @@ async def get_area(
 )
 async def get_area_by_name_and_type(
     name: Annotated[str, Path(description="Area name")],
-    area_type: Annotated[str, Path(description="Area type: NATION, ZONE, REGION, AREA, or DIVISION")],
+    area_type: Annotated[
+        str, Path(description="Area type: NATION, ZONE, REGION, AREA, or DIVISION")
+    ],
     area_service: AreaServiceDep,
 ):
     """
@@ -239,7 +240,9 @@ async def list_areas(
     area_service: AreaServiceDep,
     area_type: Annotated[
         str | None,
-        Query(description="Filter by area type: NATION, ZONE, REGION, AREA, or DIVISION"),
+        Query(
+            description="Filter by area type: NATION, ZONE, REGION, AREA, or DIVISION"
+        ),
     ] = None,
     is_active: Annotated[
         bool | None,
@@ -251,7 +254,9 @@ async def list_areas(
     ] = None,
     parent_type: Annotated[
         str | None,
-        Query(description="Parent type: nation, zone, region, or area (required if parent_id is provided)"),
+        Query(
+            description="Parent type: nation, zone, region, or area (required if parent_id is provided)"
+        ),
     ] = None,
     limit: Annotated[
         int,
@@ -447,7 +452,9 @@ async def delete_area(
 )
 async def get_areas_by_parent(
     parent_id: Annotated[int, Path(description="Parent area ID", ge=1)],
-    parent_type: Annotated[str, Query(description="Parent type: nation, zone, region, or area")],
+    parent_type: Annotated[
+        str, Query(description="Parent type: nation, zone, region, or area")
+    ],
     area_service: AreaServiceDep,
 ):
     """
@@ -525,6 +532,7 @@ async def get_all_nations(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get nations",
         )
+
 
 @router.get(
     "/nation/{nation_id}/zones",
@@ -738,4 +746,3 @@ async def get_active_areas_count(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get active areas count",
         )
-

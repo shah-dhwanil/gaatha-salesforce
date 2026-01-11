@@ -8,14 +8,13 @@ including authentication, database access, and service initialization.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Path, status
+from fastapi import Depends, Path
 
 from api.database import DatabasePool, get_db_pool
-from api.service.role import RoleService
 
 
 async def get_company_id_from_path(
-    company_id: Annotated[UUID, Path(description="Company UUID")]
+    company_id: Annotated[UUID, Path(description="Company UUID")],
 ) -> UUID:
     """
     Extract and validate company_id from path parameter.
@@ -32,8 +31,6 @@ async def get_company_id_from_path(
     return company_id
 
 
-
 # Type aliases for cleaner endpoint signatures
 DatabasePoolDep = Annotated[DatabasePool, Depends(get_db_pool)]
 CompanyIDDep = Annotated[UUID, Depends(get_company_id_from_path)]
-

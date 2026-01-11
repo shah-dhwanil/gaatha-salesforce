@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from api.models.docuemnts import DocumentInDB
 
 
@@ -28,7 +28,7 @@ class ProductMargins(BaseModel):
         value: float
         purchase_price: float
         sale_price: float
-    
+
     super_stockist: Margin
     distributor: Margin
     retailer: Margin
@@ -201,7 +201,3 @@ class ProductDetailItem(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
-
-
-
-

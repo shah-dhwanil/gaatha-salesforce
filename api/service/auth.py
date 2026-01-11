@@ -180,7 +180,9 @@ class AuthService:
             user = AuthenticatedUser(
                 user_id=UUID(payload["user_id"]),
                 area_id=payload["area_id"],
-                company_id=UUID(payload["company_id"]) if payload.get("company_id") else None,
+                company_id=UUID(payload["company_id"])
+                if payload.get("company_id")
+                else None,
                 role=payload["role"],
             )
 
@@ -278,7 +280,7 @@ class AuthService:
         )
 
         return token
-    
+
     def verify_temp_token(self, token: str) -> str:
         """Verify and decode a temporary JWT token.
 

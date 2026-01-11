@@ -614,4 +614,3 @@ class RouteService:
                 company_id=str(self.company_id),
             )
             raise
-

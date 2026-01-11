@@ -17,7 +17,13 @@ from api.exceptions.route import (
     RouteNotFoundException,
     RouteOperationException,
 )
-from api.models.route import RouteCreate, RouteDetailItem, RouteInDB, RouteListItem, RouteUpdate
+from api.models.route import (
+    RouteCreate,
+    RouteDetailItem,
+    RouteInDB,
+    RouteListItem,
+    RouteUpdate,
+)
 from api.repository.utils import get_schema_name, set_search_path
 
 logger = structlog.get_logger(__name__)
@@ -445,12 +451,26 @@ class RouteRepository:
         """
         if connection:
             return await self._list_routes(
-                connection, area_id, is_active, is_general, is_modern, is_horeca, limit, offset
+                connection,
+                area_id,
+                is_active,
+                is_general,
+                is_modern,
+                is_horeca,
+                limit,
+                offset,
             )
 
         async with self.db_pool.acquire() as conn:
             return await self._list_routes(
-                conn, area_id, is_active, is_general, is_modern, is_horeca, limit, offset
+                conn,
+                area_id,
+                is_active,
+                is_general,
+                is_modern,
+                is_horeca,
+                limit,
+                offset,
             )
 
     async def _count_routes(
@@ -602,7 +622,7 @@ class RouteRepository:
                 param_count += 1
                 update_fields.append(f"name = ${param_count}")
                 params.append(route_data.name)
-            
+
             if route_data.area_id is not None:
                 param_count += 1
                 update_fields.append(f"area_id = ${param_count}")
@@ -831,4 +851,3 @@ class RouteRepository:
 
         async with self.db_pool.acquire() as conn:
             return await self._get_routes_by_area(area_id, conn)
-

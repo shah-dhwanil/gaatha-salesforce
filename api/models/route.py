@@ -27,6 +27,7 @@ class RouteCreate(BaseModel):
         if not v or not v.strip():
             raise ValueError("Field cannot be empty")
         return v.strip()
+
     @field_validator("area_id")
     @classmethod
     def validate_area_id(cls, v: int) -> int:
@@ -52,7 +53,9 @@ class RouteCreate(BaseModel):
 class RouteUpdate(BaseModel):
     """Model for updating an existing route."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=32, description="Route name")
+    name: Optional[str] = Field(
+        None, min_length=1, max_length=32, description="Route name"
+    )
     area_id: Optional[int] = Field(None, gt=0, description="Area ID")
     is_general: Optional[bool] = Field(None, description="Whether the route is general")
     is_modern: Optional[bool] = Field(None, description="Whether the route is modern")
@@ -76,6 +79,7 @@ class RouteUpdate(BaseModel):
                 "Area ID must be a positive integer",
             )
         return v
+
     @model_validator(mode="after")
     def validate_trade_types(self) -> "RouteUpdate":
         """Validate that at least one trade type is selected if any are being updated."""
@@ -95,7 +99,6 @@ class RouteUpdate(BaseModel):
                 )
 
         return self
-
 
 
 class RouteInDB(BaseModel):
@@ -149,7 +152,6 @@ class RouteListItem(BaseModel):
     is_horeca: bool = Field(..., description="Whether the route is horeca")
     retailer_count: int = Field(..., description="Number of retailers in the route")
     is_active: bool = Field(..., description="Whether the route is active")
-
 
     class Config:
         from_attributes = True

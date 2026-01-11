@@ -1,12 +1,11 @@
 from typing import Annotated
 from fastapi import Depends
 from api.service.role import RoleService
-from api.dependencies.common import CompanyIDDep,DatabasePoolDep
+from api.dependencies.common import CompanyIDDep, DatabasePoolDep
 
 
 async def get_role_service(
-    db_pool: DatabasePoolDep,
-    company_id: CompanyIDDep
+    db_pool: DatabasePoolDep, company_id: CompanyIDDep
 ) -> RoleService:
     """
     Dependency to get RoleService instance.
@@ -19,5 +18,6 @@ async def get_role_service(
         RoleService instance configured for the tenant
     """
     return RoleService(db_pool, company_id)
+
 
 RoleServiceDep = Annotated[RoleService, Depends(get_role_service)]

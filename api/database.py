@@ -36,14 +36,14 @@ class DatabasePool:
         self.config = config
         self._pool: Optional[asyncpg.Pool] = None
         self._is_initialized = False
-    async def init_connection(self, connection: asyncpg.Connection):
-            await connection.set_type_codec(
-                "json",
-                encoder=dumps,
-                decoder=loads,
-                schema="pg_catalog",
-            )
 
+    async def init_connection(self, connection: asyncpg.Connection):
+        await connection.set_type_codec(
+            "json",
+            encoder=dumps,
+            decoder=loads,
+            schema="pg_catalog",
+        )
 
     async def connect(self) -> None:
         """
@@ -75,7 +75,6 @@ class DatabasePool:
                 timeout=self.config.POOL_TIMEOUT,
                 command_timeout=60.0,
                 init=self.init_connection,
-
             )
 
             self._is_initialized = True

@@ -65,7 +65,6 @@ class AreaRepository:
         try:
             await set_search_path(connection, self.schema_name)
 
-
             # Insert the area
             row = await connection.fetchrow(
                 """
@@ -106,25 +105,15 @@ class AreaRepository:
                 ) from e
         except asyncpg.ForeignKeyViolationError as e:
             if "area_id" in str(e):
-                raise AreaNotFoundException(
-                    area_id=area_data.area_id
-                )
+                raise AreaNotFoundException(area_id=area_data.area_id)
             elif "region_id" in str(e):
-                raise AreaNotFoundException(
-                    area_id=area_data.region_id
-                )
+                raise AreaNotFoundException(area_id=area_data.region_id)
             elif "zone_id" in str(e):
-                raise AreaNotFoundException(
-                    area_id=area_data.zone_id
-                )
+                raise AreaNotFoundException(area_id=area_data.zone_id)
             elif "nation_id" in str(e):
-                raise AreaNotFoundException(
-                    area_id=area_data.nation_id
-                )
+                raise AreaNotFoundException(area_id=area_data.nation_id)
             else:
-                raise AreaNotFoundException(
-                    area_id=area_data.id
-                ) from e
+                raise AreaNotFoundException(area_id=area_data.id) from e
         except Exception as e:
             logger.error(
                 "Failed to create area",
@@ -847,4 +836,3 @@ class AreaRepository:
 
         async with self.db_pool.acquire() as conn:
             return await self._get_areas_by_parent(parent_id, parent_type, conn)
-

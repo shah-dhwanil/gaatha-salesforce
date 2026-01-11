@@ -61,13 +61,15 @@ class BrandCategoryAlreadyExistsException(AppException):
     ) -> None:
         if message is None:
             if brand_category_code and brand_category_name:
-                message = (
-                    f"Brand category with code '{brand_category_code}' or name '{brand_category_name}' already exists"
-                )
+                message = f"Brand category with code '{brand_category_code}' or name '{brand_category_name}' already exists"
             elif brand_category_code:
-                message = f"Brand category with code '{brand_category_code}' already exists"
+                message = (
+                    f"Brand category with code '{brand_category_code}' already exists"
+                )
             elif brand_category_name:
-                message = f"Brand category with name '{brand_category_name}' already exists"
+                message = (
+                    f"Brand category with name '{brand_category_name}' already exists"
+                )
             else:
                 message = "Brand category already exists"
 

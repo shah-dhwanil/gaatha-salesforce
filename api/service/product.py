@@ -89,7 +89,11 @@ class ProductService:
 
             return product_detail
 
-        except (ProductAlreadyExistsException, ProductNotFoundException, ProductOperationException):
+        except (
+            ProductAlreadyExistsException,
+            ProductNotFoundException,
+            ProductOperationException,
+        ):
             raise
         except Exception as e:
             logger.error(
@@ -276,7 +280,11 @@ class ProductService:
 
             return product_detail
 
-        except (ProductNotFoundException, ProductAlreadyExistsException, ProductOperationException):
+        except (
+            ProductNotFoundException,
+            ProductAlreadyExistsException,
+            ProductOperationException,
+        ):
             raise
         except Exception as e:
             logger.error(

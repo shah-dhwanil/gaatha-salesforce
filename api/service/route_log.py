@@ -19,7 +19,6 @@ from api.exceptions.route_log import (
 )
 from api.models.route_log import (
     RouteLogCreate,
-    RouteLogInDB,
     RouteLogListItem,
     RouteLogResponse,
     RouteLogUpdate,
@@ -73,13 +72,18 @@ class RouteLogService:
             logger.info(
                 "Creating route log",
                 route_assignment_id=route_log_data.route_assignment_id,
-                co_worker_id=str(route_log_data.co_worker_id) if route_log_data.co_worker_id else None,
+                co_worker_id=str(route_log_data.co_worker_id)
+                if route_log_data.co_worker_id
+                else None,
                 date=str(route_log_data.date),
                 company_id=str(self.company_id),
             )
 
             # Additional business logic validation
-            if route_log_data.end_time and route_log_data.end_time <= route_log_data.start_time:
+            if (
+                route_log_data.end_time
+                and route_log_data.end_time <= route_log_data.start_time
+            ):
                 raise RouteLogValidationException(
                     message="End time must be after start time",
                     field="end_time",
@@ -117,9 +121,7 @@ class RouteLogService:
                 operation="create",
             ) from e
 
-    async def get_route_log_by_id(
-        self, route_log_id: int
-    ) -> RouteLogResponse:
+    async def get_route_log_by_id(self, route_log_id: int) -> RouteLogResponse:
         """
         Get a route log by ID.
 
@@ -503,7 +505,10 @@ class RouteLogService:
             ) from e
 
     async def get_route_logs_by_co_worker(
-        self, co_worker_id: UUID, date_from: Optional[date] = None, date_to: Optional[date] = None
+        self,
+        co_worker_id: UUID,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
     ) -> list[RouteLogListItem]:
         """
         Get all route logs for a specific co-worker, optionally filtered by date range.
@@ -621,4 +626,3 @@ class RouteLogService:
                 message=f"Failed to get route logs by date range: {str(e)}",
                 operation="get_by_date_range",
             ) from e
-

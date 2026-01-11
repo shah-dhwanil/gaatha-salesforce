@@ -24,10 +24,18 @@ class RouteNotFoundException(AppException):
                 message = f"Route with code '{route_code}' not found"
             else:
                 message = "Route not found"
-        
-        field = "id" if route_id is not None else "code" if route_code is not None else None
-        value = route_id if route_id is not None else route_code if route_code is not None else None
-        
+
+        field = (
+            "id" if route_id is not None else "code" if route_code is not None else None
+        )
+        value = (
+            route_id
+            if route_id is not None
+            else route_code
+            if route_code is not None
+            else None
+        )
+
         super().__init__(
             type=ErrorTypes.ResourceNotFound,
             message=message,
@@ -95,4 +103,3 @@ class RouteOperationException(AppException):
             **kwargs,
         )
         self.operation = operation
-

@@ -20,4 +20,3 @@ async def get_user_service(
 
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
-

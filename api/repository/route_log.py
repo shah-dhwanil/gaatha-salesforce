@@ -132,7 +132,9 @@ class RouteLogRepository:
             ) from e
 
     async def create_route_log(
-        self, route_log_data: RouteLogCreate, connection: Optional[asyncpg.Connection] = None
+        self,
+        route_log_data: RouteLogCreate,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> RouteLogInDB:
         """
         Create a new route log.
@@ -348,12 +350,24 @@ class RouteLogRepository:
         """
         if connection:
             return await self._list_route_logs(
-                connection, route_assignment_id, co_worker_id, date_from, date_to, limit, offset
+                connection,
+                route_assignment_id,
+                co_worker_id,
+                date_from,
+                date_to,
+                limit,
+                offset,
             )
 
         async with self.db_pool.acquire() as conn:
             return await self._list_route_logs(
-                conn, route_assignment_id, co_worker_id, date_from, date_to, limit, offset
+                conn,
+                route_assignment_id,
+                co_worker_id,
+                date_from,
+                date_to,
+                limit,
+                offset,
             )
 
     async def _count_route_logs(
@@ -598,7 +612,9 @@ class RouteLogRepository:
             RouteLogOperationException: If update fails
         """
         if connection:
-            return await self._update_route_log(route_log_id, route_log_data, connection)
+            return await self._update_route_log(
+                route_log_id, route_log_data, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             return await self._update_route_log(route_log_id, route_log_data, conn)
@@ -736,8 +752,11 @@ class RouteLogRepository:
             RouteLogOperationException: If retrieval fails
         """
         if connection:
-            return await self._get_route_logs_by_route_assignment(route_assignment_id, connection)
+            return await self._get_route_logs_by_route_assignment(
+                route_assignment_id, connection
+            )
 
         async with self.db_pool.acquire() as conn:
-            return await self._get_route_logs_by_route_assignment(route_assignment_id, conn)
-
+            return await self._get_route_logs_by_route_assignment(
+                route_assignment_id, conn
+            )

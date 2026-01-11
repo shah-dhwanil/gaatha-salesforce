@@ -99,4 +99,3 @@ class DistributorOperationException(AppException):
             **kwargs,
         )
         self.operation = operation
-

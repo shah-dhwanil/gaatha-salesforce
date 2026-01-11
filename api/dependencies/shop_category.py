@@ -5,8 +5,7 @@ from api.dependencies.common import CompanyIDDep, DatabasePoolDep
 
 
 async def get_shop_category_service(
-    db_pool: DatabasePoolDep,
-    company_id: CompanyIDDep
+    db_pool: DatabasePoolDep, company_id: CompanyIDDep
 ) -> ShopCategoryService:
     """
     Dependency to get ShopCategoryService instance.
@@ -20,5 +19,7 @@ async def get_shop_category_service(
     """
     return ShopCategoryService(db_pool, company_id)
 
-ShopCategoryServiceDep = Annotated[ShopCategoryService, Depends(get_shop_category_service)]
 
+ShopCategoryServiceDep = Annotated[
+    ShopCategoryService, Depends(get_shop_category_service)
+]

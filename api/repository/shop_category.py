@@ -116,7 +116,9 @@ class ShopCategoryRepository:
             ) from e
 
     async def create_shop_category(
-        self, shop_category_data: ShopCategoryCreate, connection: Optional[asyncpg.Connection] = None
+        self,
+        shop_category_data: ShopCategoryCreate,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> ShopCategoryInDB:
         """
         Create a new shop category.
@@ -239,7 +241,9 @@ class ShopCategoryRepository:
             )
 
             if not row:
-                raise ShopCategoryNotFoundException(shop_category_name=shop_category_name)
+                raise ShopCategoryNotFoundException(
+                    shop_category_name=shop_category_name
+                )
 
             return ShopCategoryInDB(**dict(row))
 
@@ -373,7 +377,9 @@ class ShopCategoryRepository:
             ShopCategoryOperationException: If listing fails
         """
         if connection:
-            return await self._list_shop_categories(connection, is_active, limit, offset)
+            return await self._list_shop_categories(
+                connection, is_active, limit, offset
+            )
 
         async with self.db_pool.acquire() as conn:
             return await self._list_shop_categories(conn, is_active, limit, offset)
@@ -405,7 +411,9 @@ class ShopCategoryRepository:
                     is_active,
                 )
             else:
-                count = await connection.fetchval("SELECT COUNT(*) FROM shop_categories")
+                count = await connection.fetchval(
+                    "SELECT COUNT(*) FROM shop_categories"
+                )
 
             return count or 0
 
@@ -548,10 +556,14 @@ class ShopCategoryRepository:
             ShopCategoryOperationException: If update fails
         """
         if connection:
-            return await self._update_shop_category(shop_category_id, shop_category_data, connection)
+            return await self._update_shop_category(
+                shop_category_id, shop_category_data, connection
+            )
 
         async with self.db_pool.acquire() as conn:
-            return await self._update_shop_category(shop_category_id, shop_category_data, conn)
+            return await self._update_shop_category(
+                shop_category_id, shop_category_data, conn
+            )
 
     async def _delete_shop_category(
         self, shop_category_id: int, connection: asyncpg.Connection
@@ -621,7 +633,9 @@ class ShopCategoryRepository:
             return await self._delete_shop_category(shop_category_id, conn)
 
     async def _bulk_create_shop_categories(
-        self, shop_categories_data: list[ShopCategoryCreate], connection: asyncpg.Connection
+        self,
+        shop_categories_data: list[ShopCategoryCreate],
+        connection: asyncpg.Connection,
     ) -> list[ShopCategoryInDB]:
         """
         Private method to bulk create shop categories with a provided connection.
@@ -716,8 +730,9 @@ class ShopCategoryRepository:
             ShopCategoryOperationException: If creation fails
         """
         if connection:
-            return await self._bulk_create_shop_categories(shop_categories_data, connection)
+            return await self._bulk_create_shop_categories(
+                shop_categories_data, connection
+            )
 
         async with self.db_pool.transaction() as conn:
             return await self._bulk_create_shop_categories(shop_categories_data, conn)
-

@@ -91,4 +91,3 @@ class ShopCategoryOperationException(AppException):
             **kwargs,
         )
         self.operation = operation
-

@@ -16,13 +16,21 @@ class RetailerCreate(BaseModel):
     """Model for creating a new retailer."""
 
     name: str = Field(..., min_length=1, max_length=255, description="Retailer name")
-    code: Optional[str] = Field(None, min_length=1, max_length=50, description="Retailer code")
-    contact_person_name: str = Field(..., min_length=1, max_length=255, description="Contact person name")
-    mobile_number: str = Field(..., min_length=10, max_length=15, description="Mobile number")
+    code: Optional[str] = Field(
+        None, min_length=1, max_length=50, description="Retailer code"
+    )
+    contact_person_name: str = Field(
+        ..., min_length=1, max_length=255, description="Contact person name"
+    )
+    mobile_number: str = Field(
+        ..., min_length=10, max_length=15, description="Mobile number"
+    )
     email: Optional[EmailStr] = Field(None, description="Email address")
     gst_no: str = Field(..., min_length=15, max_length=15, description="GST number")
     pan_no: str = Field(..., min_length=10, max_length=10, description="PAN number")
-    license_no: Optional[str] = Field(None, max_length=255, description="License number")
+    license_no: Optional[str] = Field(
+        None, max_length=255, description="License number"
+    )
     address: str = Field(..., min_length=1, description="Address")
     category_id: int = Field(..., description="Shop category ID")
     pin_code: str = Field(..., min_length=6, max_length=6, description="PIN code")
@@ -31,7 +39,9 @@ class RetailerCreate(BaseModel):
     store_images: Optional[DocumentInDB] = Field(None, description="Store images")
     route_id: int = Field(..., description="Route ID")
     bank_details: BankDetails = Field(..., description="Bank details")
-    is_verified: bool = Field(default=False, description="Whether the retailer is verified")
+    is_verified: bool = Field(
+        default=False, description="Whether the retailer is verified"
+    )
     is_type_a: bool = Field(..., description="Whether the retailer is type A")
     is_type_b: bool = Field(..., description="Whether the retailer is type B")
     is_type_c: bool = Field(..., description="Whether the retailer is type C")
@@ -67,29 +77,53 @@ class RetailerCreate(BaseModel):
         """Validate that exactly one retailer type is true."""
         type_count = sum([self.is_type_a, self.is_type_b, self.is_type_c])
         if type_count != 1:
-            raise ValueError("Exactly one of is_type_a, is_type_b, or is_type_c must be true")
+            raise ValueError(
+                "Exactly one of is_type_a, is_type_b, or is_type_c must be true"
+            )
         return self
 
 
 class RetailerUpdate(BaseModel):
     """Model for updating an existing retailer."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=255, description="Retailer name")
-    contact_person_name: Optional[str] = Field(None, min_length=1, max_length=255, description="Contact person name")
-    mobile_number: Optional[str] = Field(None, min_length=10, max_length=15, description="Mobile number")
+    name: Optional[str] = Field(
+        None, min_length=1, max_length=255, description="Retailer name"
+    )
+    contact_person_name: Optional[str] = Field(
+        None, min_length=1, max_length=255, description="Contact person name"
+    )
+    mobile_number: Optional[str] = Field(
+        None, min_length=10, max_length=15, description="Mobile number"
+    )
     email: Optional[EmailStr] = Field(None, description="Email address")
-    gst_no: Optional[str] = Field(None, min_length=15, max_length=15, description="GST number")
-    pan_no: Optional[str] = Field(None, min_length=10, max_length=10, description="PAN number")
-    license_no: Optional[str] = Field(None, max_length=255, description="License number")
+    gst_no: Optional[str] = Field(
+        None, min_length=15, max_length=15, description="GST number"
+    )
+    pan_no: Optional[str] = Field(
+        None, min_length=10, max_length=10, description="PAN number"
+    )
+    license_no: Optional[str] = Field(
+        None, max_length=255, description="License number"
+    )
     address: Optional[str] = Field(None, min_length=1, description="Address")
     category_id: Optional[int] = Field(None, description="Shop category ID")
-    pin_code: Optional[str] = Field(None, min_length=6, max_length=6, description="PIN code")
+    pin_code: Optional[str] = Field(
+        None, min_length=6, max_length=6, description="PIN code"
+    )
     map_link: Optional[str] = Field(None, description="Map link")
     route_id: Optional[int] = Field(None, description="Route ID")
-    is_verified: Optional[bool] = Field(None, description="Whether the retailer is verified")
-    is_type_a: Optional[bool] = Field(None, description="Whether the retailer is type A")
-    is_type_b: Optional[bool] = Field(None, description="Whether the retailer is type B")
-    is_type_c: Optional[bool] = Field(None, description="Whether the retailer is type C")
+    is_verified: Optional[bool] = Field(
+        None, description="Whether the retailer is verified"
+    )
+    is_type_a: Optional[bool] = Field(
+        None, description="Whether the retailer is type A"
+    )
+    is_type_b: Optional[bool] = Field(
+        None, description="Whether the retailer is type B"
+    )
+    is_type_c: Optional[bool] = Field(
+        None, description="Whether the retailer is type C"
+    )
 
     @field_validator("name", "contact_person_name", "address")
     @classmethod
@@ -125,15 +159,24 @@ class RetailerUpdate(BaseModel):
     def validate_retailer_type(self):
         """Validate that exactly one retailer type is true when any type field is provided."""
         # Only validate if at least one type field is being updated
-        if any(field is not None for field in [self.is_type_a, self.is_type_b, self.is_type_c]):
+        if any(
+            field is not None
+            for field in [self.is_type_a, self.is_type_b, self.is_type_c]
+        ):
             # If any type field is provided, ensure that exactly one is true
             # Note: This validation is partial - full validation requires checking current DB state
             # The service layer will handle complete validation
-            provided_types = [val for val in [self.is_type_a, self.is_type_b, self.is_type_c] if val is not None]
+            provided_types = [
+                val
+                for val in [self.is_type_a, self.is_type_b, self.is_type_c]
+                if val is not None
+            ]
             if len(provided_types) == 3:  # All three are being updated
                 type_count = sum(provided_types)
                 if type_count != 1:
-                    raise ValueError("Exactly one of is_type_a, is_type_b, or is_type_c must be true")
+                    raise ValueError(
+                        "Exactly one of is_type_a, is_type_b, or is_type_c must be true"
+                    )
         return self
 
 
@@ -254,4 +297,3 @@ class RetailerDetailItem(BaseModel):
     class Config:
         from_attributes = True
         ignore_extra = True
-

@@ -17,7 +17,12 @@ from api.exceptions.company import (
     CompanyNotFoundException,
     CompanyOperationException,
 )
-from api.models.company import CompanyCreate, CompanyInDB, CompanyListItem, CompanyUpdate
+from api.models.company import (
+    CompanyCreate,
+    CompanyInDB,
+    CompanyListItem,
+    CompanyUpdate,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -57,7 +62,6 @@ class CompanyRepository:
             CompanyOperationException: If creation fails
         """
         try:
-
             # Insert the company
             row = await connection.fetchrow(
                 """
@@ -101,7 +105,9 @@ class CompanyRepository:
             ) from e
 
     async def create_company(
-        self, company_data: CompanyCreate, connection: Optional[asyncpg.Connection] = None
+        self,
+        company_data: CompanyCreate,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> CompanyInDB:
         """
         Create a new company.
@@ -447,7 +453,9 @@ class CompanyRepository:
                     is_active,
                 )
             else:
-                count = await connection.fetchval("SELECT COUNT(*) FROM salesforce.company")
+                count = await connection.fetchval(
+                    "SELECT COUNT(*) FROM salesforce.company"
+                )
 
             return count or 0
 
@@ -524,12 +532,12 @@ class CompanyRepository:
                 param_count += 1
                 update_fields.append(f"address = ${param_count}")
                 params.append(company_data.address)
-            
+
             if company_data.gst_no is not None:
                 param_count += 1
                 update_fields.append(f"gst_no = ${param_count}")
                 params.append(company_data.gst_no)
-            
+
             if company_data.cin_no is not None:
                 param_count += 1
                 update_fields.append(f"cin_no = ${param_count}")
@@ -669,4 +677,3 @@ class CompanyRepository:
 
         async with self.db_pool.acquire() as conn:
             return await self._delete_company(company_id, conn)
-

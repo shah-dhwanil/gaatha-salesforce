@@ -5,8 +5,7 @@ from api.dependencies.common import CompanyIDDep, DatabasePoolDep
 
 
 async def get_distributor_service(
-    db_pool: DatabasePoolDep,
-    company_id: CompanyIDDep
+    db_pool: DatabasePoolDep, company_id: CompanyIDDep
 ) -> DistributorService:
     """
     Dependency to get DistributorService instance.
@@ -20,5 +19,5 @@ async def get_distributor_service(
     """
     return DistributorService(db_pool, company_id)
 
-DistributorServiceDep = Annotated[DistributorService, Depends(get_distributor_service)]
 
+DistributorServiceDep = Annotated[DistributorService, Depends(get_distributor_service)]

@@ -15,11 +15,9 @@ from api.exceptions.area import (
     AreaAlreadyExistsException,
     AreaInvalidHierarchyException,
     AreaNotFoundException,
-    AreaOperationException,
 )
 from api.models.area import (
     AreaCreate,
-    AreaInDB,
     AreaListItem,
     AreaResponse,
     AreaType,
@@ -398,7 +396,9 @@ class AreaService:
                 ]
             ):
                 if area_data.type == AreaType.DIVISION.value:
-                    parent_area = await self.repository.get_area_by_id(area_data.area_id)
+                    parent_area = await self.repository.get_area_by_id(
+                        area_data.area_id
+                    )
                     if parent_area.type != AreaType.AREA.value:
                         raise AreaInvalidHierarchyException(
                             message="Division's parent area must be of type AREA",
@@ -407,7 +407,9 @@ class AreaService:
                     area_data.zone_id = parent_area.zone_id
                     area_data.nation_id = parent_area.nation_id
                 elif area_data.type == AreaType.AREA.value:
-                    parent_area = await self.repository.get_area_by_id(area_data.region_id)
+                    parent_area = await self.repository.get_area_by_id(
+                        area_data.region_id
+                    )
                     if parent_area.type != AreaType.REGION.value:
                         raise AreaInvalidHierarchyException(
                             message="Area's parent region must be of type REGION",
@@ -416,7 +418,9 @@ class AreaService:
                     area_data.zone_id = parent_area.zone_id
                     area_data.nation_id = parent_area.nation_id
                 elif area_data.type == AreaType.REGION.value:
-                    parent_area = await self.repository.get_area_by_id(area_data.zone_id)
+                    parent_area = await self.repository.get_area_by_id(
+                        area_data.zone_id
+                    )
                     if parent_area.type != AreaType.ZONE.value:
                         raise AreaInvalidHierarchyException(
                             message="Region's parent zone must be of type ZONE",
@@ -425,7 +429,9 @@ class AreaService:
                     area_data.region_id = None
                     area_data.nation_id = parent_area.nation_id
                 elif area_data.type == AreaType.ZONE.value:
-                    parent_area = await self.repository.get_area_by_id(area_data.nation_id)
+                    parent_area = await self.repository.get_area_by_id(
+                        area_data.nation_id
+                    )
                     if parent_area.type != AreaType.NATION.value:
                         raise AreaInvalidHierarchyException(
                             message="Zone's parent nation must be of type NATION",

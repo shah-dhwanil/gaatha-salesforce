@@ -23,4 +23,3 @@ def get_route_service(
 
 
 RouteServiceDep = Annotated[RouteService, Depends(get_route_service)]
-

@@ -52,7 +52,11 @@ class RetailerRepository:
         self.schema_name = get_schema_name(company_id)
 
     async def _create_retailer(
-        self, retailer_data: RetailerCreate,r_id:UUID,r_code:str, connection: asyncpg.Connection
+        self,
+        retailer_data: RetailerCreate,
+        r_id: UUID,
+        r_code: str,
+        connection: asyncpg.Connection,
     ) -> RetailerInDB:
         """
         Private method to create a retailer with a provided connection.
@@ -198,7 +202,11 @@ class RetailerRepository:
             ) from e
 
     async def create_retailer(
-        self, retailer_data: RetailerCreate, r_id:UUID, r_code:str, connection: Optional[asyncpg.Connection] = None
+        self,
+        retailer_data: RetailerCreate,
+        r_id: UUID,
+        r_code: str,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> RetailerInDB:
         """
         Create a new retailer.
@@ -649,7 +657,9 @@ class RetailerRepository:
             RetailerOperationException: If counting fails
         """
         if connection:
-            return await self._count_retailers(connection, route_id, category_id, is_active)
+            return await self._count_retailers(
+                connection, route_id, category_id, is_active
+            )
 
         async with self.db_pool.acquire() as conn:
             return await self._count_retailers(conn, route_id, category_id, is_active)
@@ -814,15 +824,25 @@ class RetailerRepository:
         except asyncpg.UniqueViolationError as e:
             error_msg = str(e)
             if "uniq_retailer_gst_no" in error_msg:
-                raise RetailerAlreadyExistsException(field="gst_no", value=retailer_data.gst_no)
+                raise RetailerAlreadyExistsException(
+                    field="gst_no", value=retailer_data.gst_no
+                )
             elif "uniq_retailer_pan_no" in error_msg:
-                raise RetailerAlreadyExistsException(field="pan_no", value=retailer_data.pan_no)
+                raise RetailerAlreadyExistsException(
+                    field="pan_no", value=retailer_data.pan_no
+                )
             elif "uniq_retailer_license_no" in error_msg:
-                raise RetailerAlreadyExistsException(field="license_no", value=retailer_data.license_no)
+                raise RetailerAlreadyExistsException(
+                    field="license_no", value=retailer_data.license_no
+                )
             elif "uniq_retailer_mobile_number" in error_msg:
-                raise RetailerAlreadyExistsException(field="mobile_number", value=retailer_data.mobile_number)
+                raise RetailerAlreadyExistsException(
+                    field="mobile_number", value=retailer_data.mobile_number
+                )
             elif "uniq_retailer_email" in error_msg:
-                raise RetailerAlreadyExistsException(field="email", value=retailer_data.email)
+                raise RetailerAlreadyExistsException(
+                    field="email", value=retailer_data.email
+                )
             else:
                 raise RetailerOperationException(
                     message=f"Failed to update retailer: {error_msg}",

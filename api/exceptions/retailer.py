@@ -99,4 +99,3 @@ class RetailerOperationException(AppException):
             **kwargs,
         )
         self.operation = operation
-

@@ -1,17 +1,20 @@
 from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator,ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from pydantic.functional_validators import model_validator
+
 
 class BankDetails(BaseModel):
     """Bank details model representing database record."""
+
     account_number: str
     account_name: str
     bank_name: str
     bank_branch: str
     account_type: Literal["SAVINGS", "CURRENT"]
     ifsc_code: str
+
 
 class UserInDB(BaseModel):
     """User model representing database record."""
@@ -21,7 +24,7 @@ class UserInDB(BaseModel):
     name: str
     contact_no: str
     company_id: Optional[UUID]
-    role:Optional[str]
+    role: Optional[str]
     area_id: Optional[int]
     bank_details: Optional[BankDetails]
     is_active: bool
@@ -30,6 +33,7 @@ class UserInDB(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
+
 
 class UserCreate(BaseModel):
     """Request model for creating a new user."""
@@ -43,10 +47,14 @@ class UserCreate(BaseModel):
     contact_no: str = Field(
         ..., min_length=1, max_length=20, description="Contact phone number"
     )
-    company_id: Optional[UUID] = Field(None, description="UUID of the company the user belongs to")
+    company_id: Optional[UUID] = Field(
+        None, description="UUID of the company the user belongs to"
+    )
     role: Optional[str] = Field(None, description="Role of the user")
     area_id: Optional[int] = Field(None, description="Area of the user")
-    bank_details: Optional[BankDetails] = Field(None, description="Bank details of the user")
+    bank_details: Optional[BankDetails] = Field(
+        None, description="Bank details of the user"
+    )
     is_super_admin: bool = Field(
         default=False, description="Indicates if the user is a super admin"
     )
@@ -76,7 +84,7 @@ class UserCreate(BaseModel):
         return v.strip()
 
     @model_validator(mode="after")
-    def validate_user_request(self) -> 'UserCreate':
+    def validate_user_request(self) -> "UserCreate":
         """Validate the user request."""
         if not self.is_super_admin:
             if not self.company_id:
@@ -103,8 +111,12 @@ class UserUpdate(BaseModel):
         None, min_length=1, max_length=100, description="Role of the user"
     )
     area_id: Optional[int] = Field(None, description="Area assignment")
-    bank_details: Optional[BankDetails] = Field(None, description="Bank details of the user")
-    company_id: Optional[UUID] = Field(None, description="UUID of the company (for schema context)")
+    bank_details: Optional[BankDetails] = Field(
+        None, description="Bank details of the user"
+    )
+    company_id: Optional[UUID] = Field(
+        None, description="UUID of the company (for schema context)"
+    )
 
     @field_validator("name")
     @classmethod
@@ -142,21 +154,26 @@ class UserUpdate(BaseModel):
             ]
         )
 
+
 class UserListResponse(BaseModel):
     """User list response model."""
+
     model_config = ConfigDict(
-        extra='allow',
+        extra="allow",
     )
 
-    id:UUID
+    id: UUID
     username: Optional[str] = Field(..., description="Username of the user")
     name: str = Field(..., description="Name of the user")
     contact_no: str = Field(..., description="Contact number of the user")
     company_id: Optional[UUID] = Field(..., description="Company ID of the user")
     role: Optional[str] = Field(..., description="Role of the user")
     area_id: Optional[int] = Field(..., description="Area ID of the user")
-    area_name: Optional[str] = Field(..., description="Name of area asscociated with the user")
+    area_name: Optional[str] = Field(
+        ..., description="Name of area asscociated with the user"
+    )
     is_active: bool = Field(..., description="Whether the user is active")
+
 
 class UserResponse(BaseModel):
     """User response model."""
@@ -168,11 +185,14 @@ class UserResponse(BaseModel):
     company_id: Optional[UUID] = Field(..., description="Company ID of the user")
     role: Optional[str] = Field(..., description="Role of the user")
     area_id: Optional[int] = Field(..., description="Area ID of the user")
-    bank_details: Optional[BankDetails] = Field(..., description="Bank details of the user")
+    bank_details: Optional[BankDetails] = Field(
+        ..., description="Bank details of the user"
+    )
     is_super_admin: bool = Field(..., description="Whether the user is a super admin")
     is_active: bool = Field(..., description="Whether the user is active")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
+
 
 class UserDetailsResponse(BaseModel):
     """User details response model."""
@@ -185,9 +205,15 @@ class UserDetailsResponse(BaseModel):
     company_name: Optional[str] = Field(..., description="Name of the company")
     role: Optional[str] = Field(..., description="Role of the user")
     area_id: Optional[int] = Field(..., description="Area ID of the user")
-    area_name: Optional[str] = Field(..., description="Name of the area asscociated with the user")
-    area_type: Optional[str] = Field(..., description="Type of the area asscociated with the user")
-    bank_details: Optional[BankDetails] = Field(..., description="Bank details of the user")
+    area_name: Optional[str] = Field(
+        ..., description="Name of the area asscociated with the user"
+    )
+    area_type: Optional[str] = Field(
+        ..., description="Type of the area asscociated with the user"
+    )
+    bank_details: Optional[BankDetails] = Field(
+        ..., description="Bank details of the user"
+    )
     is_super_admin: bool = Field(..., description="Whether the user is a super admin")
     is_active: bool = Field(..., description="Whether the user is active")
     created_at: datetime = Field(..., description="Creation timestamp")

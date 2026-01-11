@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field, field_validator
 class ShopCategoryCreate(BaseModel):
     """Model for creating a new shop category."""
 
-    name: str = Field(..., min_length=1, max_length=32, description="Shop category name")
+    name: str = Field(
+        ..., min_length=1, max_length=32, description="Shop category name"
+    )
 
     @field_validator("name")
     @classmethod
@@ -25,7 +27,9 @@ class ShopCategoryCreate(BaseModel):
 class ShopCategoryUpdate(BaseModel):
     """Model for updating an existing shop category."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=32, description="Shop category name")
+    name: Optional[str] = Field(
+        None, min_length=1, max_length=32, description="Shop category name"
+    )
 
     @field_validator("name")
     @classmethod
@@ -73,4 +77,3 @@ class ShopCategoryListItem(BaseModel):
 
     class Config:
         from_attributes = True
-

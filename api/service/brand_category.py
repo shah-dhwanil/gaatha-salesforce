@@ -21,7 +21,6 @@ from api.models.brand_category import (
     BrandCategoryDetailItem,
     BrandCategoryListItem,
     BrandCategoryMarginInDB,
-    BrandCategoryMargins,
     BrandCategoryUpdate,
 )
 from api.repository.brand_category import BrandCategoryRepository
@@ -54,7 +53,9 @@ class BrandCategoryService:
             company_id=str(company_id),
         )
 
-    async def create_brand_category(self, brand_category_data: BrandCategoryCreate) -> BrandCategoryDetailItem:
+    async def create_brand_category(
+        self, brand_category_data: BrandCategoryCreate
+    ) -> BrandCategoryDetailItem:
         """
         Create a new brand category.
 
@@ -77,10 +78,14 @@ class BrandCategoryService:
             )
 
             # Create brand category using repository
-            brand_category = await self.repository.create_brand_category(brand_category_data)
+            brand_category = await self.repository.create_brand_category(
+                brand_category_data
+            )
 
             # Fetch full details to return
-            brand_category_detail = await self.repository.get_brand_category_by_id(brand_category.id)
+            brand_category_detail = await self.repository.get_brand_category_by_id(
+                brand_category.id
+            )
 
             logger.info(
                 "Brand category created successfully",
@@ -102,7 +107,9 @@ class BrandCategoryService:
             )
             raise
 
-    async def get_brand_category_by_id(self, brand_category_id: int) -> BrandCategoryDetailItem:
+    async def get_brand_category_by_id(
+        self, brand_category_id: int
+    ) -> BrandCategoryDetailItem:
         """
         Get a brand category by ID with full details.
 
@@ -123,7 +130,9 @@ class BrandCategoryService:
                 company_id=str(self.company_id),
             )
 
-            brand_category = await self.repository.get_brand_category_by_id(brand_category_id)
+            brand_category = await self.repository.get_brand_category_by_id(
+                brand_category_id
+            )
 
             return brand_category
 
@@ -262,10 +271,14 @@ class BrandCategoryService:
             )
 
             # Update brand category using repository
-            await self.repository.update_brand_category(brand_category_id, brand_category_data)
+            await self.repository.update_brand_category(
+                brand_category_id, brand_category_data
+            )
 
             # Fetch full details to return
-            brand_category_detail = await self.repository.get_brand_category_by_id(brand_category_id)
+            brand_category_detail = await self.repository.get_brand_category_by_id(
+                brand_category_id
+            )
 
             logger.info(
                 "Brand category updated successfully",
@@ -348,7 +361,9 @@ class BrandCategoryService:
                 company_id=str(self.company_id),
             )
 
-            await self.repository.add_brand_category_visibility(brand_category_id, area_id)
+            await self.repository.add_brand_category_visibility(
+                brand_category_id, area_id
+            )
 
             logger.info(
                 "Brand category visibility added successfully",
@@ -391,7 +406,9 @@ class BrandCategoryService:
                 company_id=str(self.company_id),
             )
 
-            await self.repository.remove_brand_category_visibility(brand_category_id, area_id)
+            await self.repository.remove_brand_category_visibility(
+                brand_category_id, area_id
+            )
 
             logger.info(
                 "Brand category visibility removed successfully",
@@ -415,7 +432,10 @@ class BrandCategoryService:
     # ==================== Margin Management ====================
 
     async def add_brand_category_margin(
-        self, brand_category_id: int, area_id: Optional[int], margins: BrandCategoryMarginAddOrUpdate
+        self,
+        brand_category_id: int,
+        area_id: Optional[int],
+        margins: BrandCategoryMarginAddOrUpdate,
     ) -> "BrandCategoryMarginInDB":
         """
         Add or update margin configuration for a brand category in a specific area.
@@ -488,7 +508,9 @@ class BrandCategoryService:
                 company_id=str(self.company_id),
             )
 
-            await self.repository.remove_brand_category_margin(brand_category_id, area_id)
+            await self.repository.remove_brand_category_margin(
+                brand_category_id, area_id
+            )
 
             logger.info(
                 "Brand category margin removed successfully",

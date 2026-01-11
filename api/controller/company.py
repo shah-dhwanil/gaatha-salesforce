@@ -19,7 +19,12 @@ from api.exceptions.company import (
     CompanyValidationException,
 )
 from api.models import ListResponseModel, ResponseModel
-from api.models.company import CompanyCreate, CompanyListItem, CompanyResponse, CompanyUpdate
+from api.models.company import (
+    CompanyCreate,
+    CompanyListItem,
+    CompanyResponse,
+    CompanyUpdate,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -559,4 +564,3 @@ async def get_active_companies_count(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get active companies count",
         )
-

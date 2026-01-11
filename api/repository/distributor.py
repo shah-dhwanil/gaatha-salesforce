@@ -53,7 +53,11 @@ class DistributorRepository:
         self.schema_name = get_schema_name(company_id)
 
     async def _create_distributor(
-        self, distributor_data: DistributorCreate, d_id: UUID, d_code: str, connection: asyncpg.Connection
+        self,
+        distributor_data: DistributorCreate,
+        d_id: UUID,
+        d_code: str,
+        connection: asyncpg.Connection,
     ) -> DistributorInDB:
         """
         Private method to create a distributor with a provided connection.
@@ -208,7 +212,11 @@ class DistributorRepository:
             ) from e
 
     async def create_distributor(
-        self, distributor_data: DistributorCreate, d_id: UUID, d_code: str, connection: Optional[asyncpg.Connection] = None
+        self,
+        distributor_data: DistributorCreate,
+        d_id: UUID,
+        d_code: str,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> DistributorInDB:
         """
         Create a new distributor.
@@ -227,7 +235,9 @@ class DistributorRepository:
             DistributorOperationException: If creation fails
         """
         if connection:
-            return await self._create_distributor(distributor_data, d_id, d_code, connection)
+            return await self._create_distributor(
+                distributor_data, d_id, d_code, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             return await self._create_distributor(distributor_data, d_id, d_code, conn)
@@ -289,7 +299,13 @@ class DistributorRepository:
             # Convert route data to DistributorRouteDetail objects
             routes = []
             for route_row in route_rows:
-                route_type = "general" if route_row["is_general"] else "modern" if route_row["is_modern"] else "horeca"
+                route_type = (
+                    "general"
+                    if route_row["is_general"]
+                    else "modern"
+                    if route_row["is_modern"]
+                    else "horeca"
+                )
                 routes.append(
                     DistributorRouteDetail(
                         id=route_row["id"],
@@ -423,7 +439,13 @@ class DistributorRepository:
             # Convert route data to DistributorRouteDetail objects
             routes = []
             for route_row in route_rows:
-                route_type = "general" if route_row["is_general"] else "modern" if route_row["is_modern"] else "horeca"
+                route_type = (
+                    "general"
+                    if route_row["is_general"]
+                    else "modern"
+                    if route_row["is_modern"]
+                    else "horeca"
+                )
                 routes.append(
                     DistributorRouteDetail(
                         id=route_row["id"],
@@ -826,7 +848,9 @@ class DistributorRepository:
 
             if not update_fields:
                 # No fields to update, return current distributor
-                current_distributor = await self._get_distributor_by_id(distributor_id, connection)
+                current_distributor = await self._get_distributor_by_id(
+                    distributor_id, connection
+                )
                 # Convert to DistributorInDB by fetching without joins
                 row = await connection.fetchrow(
                     """
@@ -874,15 +898,25 @@ class DistributorRepository:
         except asyncpg.UniqueViolationError as e:
             error_msg = str(e)
             if "uniq_distributor_gst_no" in error_msg:
-                raise DistributorAlreadyExistsException(field="gst_no", value=distributor_data.gst_no)
+                raise DistributorAlreadyExistsException(
+                    field="gst_no", value=distributor_data.gst_no
+                )
             elif "uniq_distributor_pan_no" in error_msg:
-                raise DistributorAlreadyExistsException(field="pan_no", value=distributor_data.pan_no)
+                raise DistributorAlreadyExistsException(
+                    field="pan_no", value=distributor_data.pan_no
+                )
             elif "uniq_distributor_license_no" in error_msg:
-                raise DistributorAlreadyExistsException(field="license_no", value=distributor_data.license_no)
+                raise DistributorAlreadyExistsException(
+                    field="license_no", value=distributor_data.license_no
+                )
             elif "uniq_distributor_mobile_number" in error_msg:
-                raise DistributorAlreadyExistsException(field="mobile_number", value=distributor_data.mobile_number)
+                raise DistributorAlreadyExistsException(
+                    field="mobile_number", value=distributor_data.mobile_number
+                )
             elif "uniq_distributor_email" in error_msg:
-                raise DistributorAlreadyExistsException(field="email", value=distributor_data.email)
+                raise DistributorAlreadyExistsException(
+                    field="email", value=distributor_data.email
+                )
             else:
                 raise DistributorOperationException(
                     message=f"Failed to update distributor: {error_msg}",
@@ -922,10 +956,14 @@ class DistributorRepository:
             DistributorOperationException: If update fails
         """
         if connection:
-            return await self._update_distributor(distributor_id, distributor_data, connection)
+            return await self._update_distributor(
+                distributor_id, distributor_data, connection
+            )
 
         async with self.db_pool.acquire() as conn:
-            return await self._update_distributor(distributor_id, distributor_data, conn)
+            return await self._update_distributor(
+                distributor_id, distributor_data, conn
+            )
 
     async def _delete_distributor(
         self, distributor_id: UUID, connection: asyncpg.Connection
@@ -1058,7 +1096,10 @@ class DistributorRepository:
             ) from e
 
     async def add_distributor_route(
-        self, distributor_id: UUID, route_id: int, connection: Optional[asyncpg.Connection] = None
+        self,
+        distributor_id: UUID,
+        route_id: int,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> None:
         """
         Add a route to a distributor.
@@ -1072,7 +1113,9 @@ class DistributorRepository:
             DistributorOperationException: If operation fails
         """
         if connection:
-            return await self._add_distributor_route(distributor_id, route_id, connection)
+            return await self._add_distributor_route(
+                distributor_id, route_id, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             return await self._add_distributor_route(distributor_id, route_id, conn)
@@ -1125,7 +1168,10 @@ class DistributorRepository:
             ) from e
 
     async def remove_distributor_route(
-        self, distributor_id: UUID, route_id: int, connection: Optional[asyncpg.Connection] = None
+        self,
+        distributor_id: UUID,
+        route_id: int,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> None:
         """
         Remove a route from a distributor.
@@ -1139,7 +1185,9 @@ class DistributorRepository:
             DistributorOperationException: If operation fails
         """
         if connection:
-            return await self._remove_distributor_route(distributor_id, route_id, connection)
+            return await self._remove_distributor_route(
+                distributor_id, route_id, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             return await self._remove_distributor_route(distributor_id, route_id, conn)
@@ -1170,4 +1218,3 @@ class DistributorRepository:
                 message=f"Failed to get serial number: {str(e)}",
                 operation="get_serial_number",
             ) from e
-

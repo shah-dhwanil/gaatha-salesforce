@@ -61,9 +61,7 @@ class BrandAlreadyExistsException(AppException):
     ) -> None:
         if message is None:
             if brand_code and brand_name:
-                message = (
-                    f"Brand with code '{brand_code}' or name '{brand_name}' already exists"
-                )
+                message = f"Brand with code '{brand_code}' or name '{brand_name}' already exists"
             elif brand_code:
                 message = f"Brand with code '{brand_code}' already exists"
             elif brand_name:

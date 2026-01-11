@@ -80,7 +80,11 @@ class BrandCategoryRepository:
             await set_search_path(connection, self.schema_name)
 
             # Convert logo to JSON if provided
-            logo_json = brand_category_data.logo.model_dump_json() if brand_category_data.logo else None
+            logo_json = (
+                brand_category_data.logo.model_dump_json()
+                if brand_category_data.logo
+                else None
+            )
 
             # Insert the brand category
             row = await connection.fetchrow(
@@ -132,7 +136,7 @@ class BrandCategoryRepository:
                 for margin_data in brand_category_data.margins:
                     margins_json = margin_data.margins.model_dump_json()
                     area_id = margin_data.area_id if margin_data.area_id else None
-                    
+
                     await connection.execute(
                         """
                         INSERT INTO brand_category_margins (brand_category_id, area_id, margins)
@@ -168,7 +172,9 @@ class BrandCategoryRepository:
                 for_general=row["for_general"],
                 for_modern=row["for_modern"],
                 for_horeca=row["for_horeca"],
-                logo=DocumentInDB.model_validate_json(row["logo"]) if row["logo"] else None,
+                logo=DocumentInDB.model_validate_json(row["logo"])
+                if row["logo"]
+                else None,
                 is_active=row["is_active"],
                 is_deleted=row["is_deleted"],
                 created_at=row["created_at"],
@@ -217,7 +223,9 @@ class BrandCategoryRepository:
             ) from e
 
     async def create_brand_category(
-        self, brand_category_data: BrandCategoryCreate, connection: Optional[asyncpg.Connection] = None
+        self,
+        brand_category_data: BrandCategoryCreate,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> BrandCategoryInDB:
         """
         Create a new brand category.
@@ -284,7 +292,9 @@ class BrandCategoryRepository:
 
             # Parse logo JSON to DocumentInDB
             if brand_category_dict.get("logo"):
-                brand_category_dict["logo"] = DocumentInDB.model_validate_json(brand_category_dict["logo"])
+                brand_category_dict["logo"] = DocumentInDB.model_validate_json(
+                    brand_category_dict["logo"]
+                )
 
             # Get areas associated with brand category visibility
             area_rows = await connection.fetch(
@@ -316,10 +326,12 @@ class BrandCategoryRepository:
             margins = []
             for margin_row in margin_rows:
                 margin_dict = dict(margin_row)
-                
+
                 # Parse margins JSON to BrandCategoryMargins
                 if margin_dict.get("margins"):
-                    margin_dict["margins"] = BrandCategoryMargins.model_validate_json(margin_dict["margins"])
+                    margin_dict["margins"] = BrandCategoryMargins.model_validate_json(
+                        margin_dict["margins"]
+                    )
                 else:
                     margin_dict["margins"] = None
 
@@ -438,7 +450,9 @@ class BrandCategoryRepository:
             OperationException: If retrieval fails
         """
         if connection:
-            return await self._get_brand_category_by_code(brand_category_code, connection)
+            return await self._get_brand_category_by_code(
+                brand_category_code, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             return await self._get_brand_category_by_code(brand_category_code, conn)
@@ -556,13 +570,20 @@ class BrandCategoryRepository:
             OperationException: If listing fails
         """
         if connection:
-            return await self._list_brand_categories(connection, brand_id, is_active, limit, offset)
+            return await self._list_brand_categories(
+                connection, brand_id, is_active, limit, offset
+            )
 
         async with self.db_pool.acquire() as conn:
-            return await self._list_brand_categories(conn, brand_id, is_active, limit, offset)
+            return await self._list_brand_categories(
+                conn, brand_id, is_active, limit, offset
+            )
 
     async def _update_brand_category(
-        self, brand_category_id: int, brand_category_data: BrandCategoryUpdate, connection: asyncpg.Connection
+        self,
+        brand_category_id: int,
+        brand_category_data: BrandCategoryUpdate,
+        connection: asyncpg.Connection,
     ) -> BrandCategoryInDB:
         """
         Private method to update a brand category with a provided connection.
@@ -624,7 +645,11 @@ class BrandCategoryRepository:
 
             if brand_category_data.logo is not None:
                 param_count += 1
-                logo_json = brand_category_data.logo.model_dump_json() if brand_category_data.logo else None
+                logo_json = (
+                    brand_category_data.logo.model_dump_json()
+                    if brand_category_data.logo
+                    else None
+                )
                 update_fields.append(f"logo = ${param_count}")
                 params.append(logo_json)
 
@@ -635,12 +660,14 @@ class BrandCategoryRepository:
 
             if not update_fields:
                 # No fields to update, just return the existing brand category
-                return await self._get_brand_category_by_id(brand_category_id, connection)
+                return await self._get_brand_category_by_id(
+                    brand_category_id, connection
+                )
 
             # Build and execute update query
             update_query = f"""
                 UPDATE brand_categories
-                SET {', '.join(update_fields)}
+                SET {", ".join(update_fields)}
                 WHERE id = $1 AND is_deleted = FALSE
                 RETURNING id, name, code, brand_id, parent_category_id, for_general, for_modern, for_horeca, logo,
                           is_active, is_deleted, created_at, updated_at
@@ -668,7 +695,9 @@ class BrandCategoryRepository:
                 for_general=row["for_general"],
                 for_modern=row["for_modern"],
                 for_horeca=row["for_horeca"],
-                logo=DocumentInDB.model_validate_json(row["logo"]) if row["logo"] else None,
+                logo=DocumentInDB.model_validate_json(row["logo"])
+                if row["logo"]
+                else None,
                 is_active=row["is_active"],
                 is_deleted=row["is_deleted"],
                 created_at=row["created_at"],
@@ -714,8 +743,10 @@ class BrandCategoryRepository:
             ) from e
 
     async def update_brand_category(
-        self, brand_category_id: int, brand_category_data: BrandCategoryUpdate,
-        connection: Optional[asyncpg.Connection] = None
+        self,
+        brand_category_id: int,
+        brand_category_data: BrandCategoryUpdate,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> BrandCategoryInDB:
         """
         Update a brand category.
@@ -733,11 +764,15 @@ class BrandCategoryRepository:
             OperationException: If update fails
         """
         if connection:
-            return await self._update_brand_category(brand_category_id, brand_category_data, connection)
+            return await self._update_brand_category(
+                brand_category_id, brand_category_data, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
-                return await self._update_brand_category(brand_category_id, brand_category_data, conn)
+                return await self._update_brand_category(
+                    brand_category_id, brand_category_data, conn
+                )
 
     async def _delete_brand_category(
         self, brand_category_id: int, connection: asyncpg.Connection
@@ -842,7 +877,9 @@ class BrandCategoryRepository:
                 brand_category_id,
             )
             if not brand_category_exists:
-                raise BrandCategoryNotFoundException(brand_category_id=brand_category_id)
+                raise BrandCategoryNotFoundException(
+                    brand_category_id=brand_category_id
+                )
 
             # Check if area exists (if area_id is provided)
             if area_id is not None:
@@ -915,11 +952,15 @@ class BrandCategoryRepository:
             BrandCategoryOperationException: If operation fails
         """
         if connection:
-            return await self._add_brand_category_visibility(brand_category_id, area_id, connection)
+            return await self._add_brand_category_visibility(
+                brand_category_id, area_id, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
-                return await self._add_brand_category_visibility(brand_category_id, area_id, conn)
+                return await self._add_brand_category_visibility(
+                    brand_category_id, area_id, conn
+                )
 
     async def _remove_brand_category_visibility(
         self,
@@ -948,7 +989,9 @@ class BrandCategoryRepository:
                 brand_category_id,
             )
             if not brand_category_exists:
-                raise BrandCategoryNotFoundException(brand_category_id=brand_category_id)
+                raise BrandCategoryNotFoundException(
+                    brand_category_id=brand_category_id
+                )
 
             # Soft delete the visibility
             result = await connection.execute(
@@ -962,7 +1005,9 @@ class BrandCategoryRepository:
             )
 
             if result == "UPDATE 0":
-                area_desc = "global visibility" if area_id is None else f"area {area_id}"
+                area_desc = (
+                    "global visibility" if area_id is None else f"area {area_id}"
+                )
                 raise BrandCategoryNotFoundException(
                     message=f"Visibility for brand category {brand_category_id} in {area_desc} not found",
                 )
@@ -1008,11 +1053,15 @@ class BrandCategoryRepository:
             BrandCategoryOperationException: If operation fails
         """
         if connection:
-            return await self._remove_brand_category_visibility(brand_category_id, area_id, connection)
+            return await self._remove_brand_category_visibility(
+                brand_category_id, area_id, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
-                return await self._remove_brand_category_visibility(brand_category_id, area_id, conn)
+                return await self._remove_brand_category_visibility(
+                    brand_category_id, area_id, conn
+                )
 
     # ==================== Brand Category Margin Methods ====================
 
@@ -1048,7 +1097,9 @@ class BrandCategoryRepository:
                 brand_category_id,
             )
             if not brand_category_row:
-                raise BrandCategoryNotFoundException(brand_category_id=brand_category_id)
+                raise BrandCategoryNotFoundException(
+                    brand_category_id=brand_category_id
+                )
 
             brand_category_name = brand_category_row["name"]
 
@@ -1092,7 +1143,7 @@ class BrandCategoryRepository:
                 param_count += 1
                 query = f"""
                     UPDATE brand_category_margins
-                    SET {', '.join(update_fields)}
+                    SET {", ".join(update_fields)}
                     WHERE brand_category_id = ${param_count - 1} AND area_id IS NOT DISTINCT FROM ${param_count} AND is_active = TRUE
                     RETURNING id,name, area_id, margins, is_active, created_at, updated_at
                 """
@@ -1121,7 +1172,9 @@ class BrandCategoryRepository:
                 id=row["id"],
                 area_id=row["area_id"],
                 name=row["name"],
-                margins=BrandCategoryMargins.model_validate_json(row["margins"]) if row["margins"] else None,
+                margins=BrandCategoryMargins.model_validate_json(row["margins"])
+                if row["margins"]
+                else None,
                 is_active=row["is_active"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
@@ -1166,11 +1219,15 @@ class BrandCategoryRepository:
             BrandCategoryOperationException: If operation fails
         """
         if connection:
-            return await self._add_brand_category_margin(brand_category_id, area_id, margins, connection)
+            return await self._add_brand_category_margin(
+                brand_category_id, area_id, margins, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
-                return await self._add_brand_category_margin(brand_category_id, area_id, margins, conn)
+                return await self._add_brand_category_margin(
+                    brand_category_id, area_id, margins, conn
+                )
 
     async def _remove_brand_category_margin(
         self,
@@ -1199,7 +1256,9 @@ class BrandCategoryRepository:
                 brand_category_id,
             )
             if not brand_category_exists:
-                raise BrandCategoryNotFoundException(brand_category_id=brand_category_id)
+                raise BrandCategoryNotFoundException(
+                    brand_category_id=brand_category_id
+                )
 
             # Soft delete the margin
             result = await connection.execute(
@@ -1259,8 +1318,12 @@ class BrandCategoryRepository:
             BrandCategoryOperationException: If operation fails
         """
         if connection:
-            return await self._remove_brand_category_margin(brand_category_id, area_id, connection)
+            return await self._remove_brand_category_margin(
+                brand_category_id, area_id, connection
+            )
 
         async with self.db_pool.acquire() as conn:
             async with conn.transaction():
-                return await self._remove_brand_category_margin(brand_category_id, area_id, conn)
+                return await self._remove_brand_category_margin(
+                    brand_category_id, area_id, conn
+                )

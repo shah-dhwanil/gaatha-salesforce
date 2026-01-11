@@ -530,4 +530,3 @@ async def bulk_create_roles(
 #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 #             detail="Failed to check role existence",
 #         )
-

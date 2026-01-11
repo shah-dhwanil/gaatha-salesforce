@@ -81,12 +81,16 @@ class DistributorService:
         try:
             async with self.db_pool.acquire() as conn:
                 serial_number = await self.repository.get_serial_number(conn)
-                company = await self.company_repository.get_company_by_id(self.company_id)
+                company = await self.company_repository.get_company_by_id(
+                    self.company_id
+                )
                 code = f"{company.name[:4].upper()}_DIST_{serial_number}"
-                
+
                 # Get area to validate and use in user creation
-                area = await self.area_repository.get_area_by_id(distributor_data.area_id, conn)
-                
+                area = await self.area_repository.get_area_by_id(
+                    distributor_data.area_id, conn
+                )
+
                 user = UserCreate(
                     username=code,
                     name=distributor_data.name,
@@ -131,7 +135,9 @@ class DistributorService:
                 operation="create_distributor",
             ) from e
 
-    async def get_distributor_by_id(self, distributor_id: UUID) -> DistributorDetailItem:
+    async def get_distributor_by_id(
+        self, distributor_id: UUID
+    ) -> DistributorDetailItem:
         """
         Get a distributor by ID with full details including joined data.
 
@@ -350,21 +356,21 @@ class DistributorService:
                 raise DistributorValidationException(
                     message="At least one field must be provided for update",
                 )
-            
+
             # Update user data if mobile number or contact person name is changed
             if distributor_data.mobile_number is not None:
                 await self.user_service.update_user(
-                    distributor_id, 
-                    UserUpdate(contact_no=distributor_data.mobile_number), 
-                    self.company_id
+                    distributor_id,
+                    UserUpdate(contact_no=distributor_data.mobile_number),
+                    self.company_id,
                 )
             if distributor_data.name is not None:
                 await self.user_service.update_user(
-                    distributor_id, 
-                    UserUpdate(name=distributor_data.name), 
-                    self.company_id
+                    distributor_id,
+                    UserUpdate(name=distributor_data.name),
+                    self.company_id,
                 )
-            
+
             # Update distributor using repository
             distributor = await self.repository.update_distributor(
                 distributor_id, distributor_data
@@ -427,9 +433,7 @@ class DistributorService:
             )
             raise
 
-    async def add_distributor_route(
-        self, distributor_id: UUID, route_id: int
-    ) -> None:
+    async def add_distributor_route(self, distributor_id: UUID, route_id: int) -> None:
         """
         Add a route to a distributor.
 
@@ -659,7 +663,7 @@ class DistributorService:
             async with self.db_pool.acquire() as conn:
                 serial_number = await self.repository.get_serial_number(conn)
             code = f"{company.name[:4].upper()}_DIST_{serial_number}"
-            
+
             validation_results = {
                 "code_exists": await self.check_distributor_exists_by_code(code),
             }
@@ -730,7 +734,7 @@ class DistributorService:
             for dist_item in all_distributors:
                 # Get full details to access trade flags
                 dist = await self.repository.get_distributor_by_id(dist_item.id)
-                
+
                 match = True
                 if for_general is not None and dist.for_general != for_general:
                     match = False
@@ -738,13 +742,13 @@ class DistributorService:
                     match = False
                 if for_horeca is not None and dist.for_horeca != for_horeca:
                     match = False
-                
+
                 if match:
                     filtered_distributors.append(dist_item)
 
             # Apply pagination
-            paginated = filtered_distributors[offset:offset + limit]
-            
+            paginated = filtered_distributors[offset : offset + limit]
+
             return paginated, len(filtered_distributors)
 
         except Exception as e:
@@ -754,4 +758,3 @@ class DistributorService:
                 company_id=str(self.company_id),
             )
             raise
-

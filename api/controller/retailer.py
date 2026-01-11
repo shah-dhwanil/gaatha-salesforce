@@ -50,7 +50,9 @@ router = APIRouter(
         201: {"description": "Retailer created successfully"},
         400: {"description": "Validation error"},
         404: {"description": "Route or category not found"},
-        409: {"description": "Retailer already exists (duplicate code, GST, PAN, etc.)"},
+        409: {
+            "description": "Retailer already exists (duplicate code, GST, PAN, etc.)"
+        },
     },
     summary="Create a new retailer",
     description="Create a new retailer with all required details including documents and images",
@@ -634,7 +636,9 @@ async def get_retailer_stats(
             category_id=category_id,
         )
 
-        verification_rate = (verified_count / active_count * 100) if active_count > 0 else 0
+        verification_rate = (
+            (verified_count / active_count * 100) if active_count > 0 else 0
+        )
 
         filters = {
             "route_id": route_id,
@@ -663,4 +667,3 @@ async def get_retailer_stats(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get retailer statistics",
         )
-

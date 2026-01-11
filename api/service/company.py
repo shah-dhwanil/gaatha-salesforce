@@ -70,10 +70,10 @@ class CompanyService:
         """
         try:
             logger.info("Creating schema", schema_name=schema_name)
-            
+
             # Create schema
             await connection.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema_name}"')
-            
+
             logger.info("Schema created successfully", schema_name=schema_name)
 
         except Exception as e:
@@ -190,7 +190,7 @@ class CompanyService:
                 company_name=company_data.name,
                 error=str(e),
             )
-            
+
             # Attempt cleanup if company was created but migrations failed
             if company and schema_name:
                 try:
@@ -201,14 +201,16 @@ class CompanyService:
                     )
                     async with self.db_pool.acquire() as conn:
                         # Drop schema if it was created
-                        await conn.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+                        await conn.execute(
+                            f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'
+                        )
                     logger.info("Cleanup completed successfully")
                 except Exception as cleanup_error:
                     logger.error(
                         "Failed to cleanup after error",
                         error=str(cleanup_error),
                     )
-            
+
             raise CompanyOperationException(
                 message=f"Failed to create company: {str(e)}",
                 operation="create",
@@ -528,6 +530,5 @@ class CompanyService:
         """
         # Verify company exists
         await self.get_company_by_id(company_id)
-        
-        return get_schema_name(company_id)
 
+        return get_schema_name(company_id)

@@ -43,4 +43,3 @@ def get_route_assignment_service(
 RouteAssignmentServiceDep = Annotated[
     RouteAssignmentService, Depends(get_route_assignment_service)
 ]
-

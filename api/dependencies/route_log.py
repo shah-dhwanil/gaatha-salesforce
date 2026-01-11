@@ -40,7 +40,4 @@ def get_route_log_service(
 
 
 # Type alias for cleaner endpoint signatures
-RouteLogServiceDep = Annotated[
-    RouteLogService, Depends(get_route_log_service)
-]
-
+RouteLogServiceDep = Annotated[RouteLogService, Depends(get_route_log_service)]

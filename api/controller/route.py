@@ -5,7 +5,6 @@ This module defines all REST API endpoints for route management
 in a multi-tenant environment. Routes belong to areas within the hierarchy.
 """
 
-from operator import le
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
@@ -355,7 +354,7 @@ async def update_route(
     - **is_modern**: Modern trade route flag
     - **is_horeca**: Horeca route flag
 
-    **Note**: 
+    **Note**:
     - Route code cannot be updated after creation
     - At least one field must be provided for update
     - Multiple type flags can be set simultaneously
@@ -466,7 +465,12 @@ async def get_routes_by_area(
     """
     try:
         routes = await route_service.get_routes_by_area(area_id)
-        return ListResponseModel    (status_code=status.HTTP_200_OK, data=routes,records_per_page=len(routes),total_count=len(routes))
+        return ListResponseModel(
+            status_code=status.HTTP_200_OK,
+            data=routes,
+            records_per_page=len(routes),
+            total_count=len(routes),
+        )
 
     except Exception as e:
         logger.error(
@@ -745,4 +749,3 @@ async def get_horeca_routes(
 #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 #             detail="Failed to get active routes count",
 #         )
-

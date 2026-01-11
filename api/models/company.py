@@ -61,7 +61,7 @@ class CompanyUpdate(BaseModel):
                 raise ValueError("Field cannot be empty")
             return v.strip()
         return v
-    
+
     @field_validator("gst_no")
     @classmethod
     def validate_gst(cls, v: Optional[str]) -> Optional[str]:
@@ -72,7 +72,7 @@ class CompanyUpdate(BaseModel):
                 raise ValueError("GST number must be exactly 15 characters")
             return v
         return v.upper()
-    
+
     @field_validator("cin_no")
     @classmethod
     def validate_cin(cls, v: Optional[str]) -> Optional[str]:
@@ -82,7 +82,8 @@ class CompanyUpdate(BaseModel):
             if len(v) != 21:
                 raise ValueError("CIN number must be exactly 21 characters")
             return v
-        return v.upper()    
+        return v.upper()
+
 
 class CompanyInDB(BaseModel):
     """Model for Company as stored in database."""
@@ -125,4 +126,3 @@ class CompanyListItem(BaseModel):
 
     class Config:
         from_attributes = True
-

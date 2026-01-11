@@ -26,10 +26,8 @@ from api.models.product import (
     ProductDetailItem,
     ProductInDB,
     ProductListItem,
-    ProductPriceCreate,
     ProductPriceInDB,
     ProductUpdate,
-    ProductVisibilityCreate,
     ProductVisibilityInDB,
     Dimensions,
     MeasurementDetails,
@@ -96,7 +94,9 @@ class ProductRepository:
                 else None
             )
             packaging_json = (
-                json.dumps([p.model_dump(mode="json") for p in product_data.packaging_details])
+                json.dumps(
+                    [p.model_dump(mode="json") for p in product_data.packaging_details]
+                )
                 if product_data.packaging_details
                 else None
             )
@@ -216,7 +216,7 @@ class ProductRepository:
                 error_msg = "Brand category not found"
             elif "area_id" in str(e):
                 error_msg = "One or more area IDs not found"
-            
+
             raise ProductOperationException(
                 message=error_msg,
                 operation="create",
@@ -235,7 +235,7 @@ class ProductRepository:
 
     def _row_to_product_in_db(self, row: asyncpg.Record) -> ProductInDB:
         """Helper method to convert database row to ProductInDB model."""
-        print("Packaging Details",json.loads(row["packaging_details"]))
+        print("Packaging Details", json.loads(row["packaging_details"]))
         return ProductInDB(
             id=row["id"],
             brand_id=row["brand_id"],
@@ -276,7 +276,9 @@ class ProductRepository:
         )
 
     async def create_product(
-        self, product_data: ProductCreate, connection: Optional[asyncpg.Connection] = None
+        self,
+        product_data: ProductCreate,
+        connection: Optional[asyncpg.Connection] = None,
     ) -> ProductInDB:
         """
         Create a new product.
@@ -366,8 +368,10 @@ class ProductRepository:
                         price_dict["margins"]
                     )
                 if price_dict.get("min_order_quantity"):
-                    price_dict["min_order_quantity"] = MinOrderQuantities.model_validate_json(
-                        price_dict["min_order_quantity"]
+                    price_dict["min_order_quantity"] = (
+                        MinOrderQuantities.model_validate_json(
+                            price_dict["min_order_quantity"]
+                        )
                     )
                 prices.append(ProductPriceInDB(**price_dict))
 
@@ -422,7 +426,10 @@ class ProductRepository:
                 ),
                 packaging_type=row["packaging_type"],
                 packaging_details=(
-                    [PackagingDetails(**p) for p in json.loads(row["packaging_details"])]
+                    [
+                        PackagingDetails(**p)
+                        for p in json.loads(row["packaging_details"])
+                    ]
                     if row["packaging_details"]
                     else None
                 ),
@@ -715,7 +722,10 @@ class ProductRepository:
             )
 
     async def _update_product(
-        self, product_id: int, product_data: ProductUpdate, connection: asyncpg.Connection
+        self,
+        product_id: int,
+        product_data: ProductUpdate,
+        connection: asyncpg.Connection,
     ) -> ProductInDB:
         """
         Private method to update a product with a provided connection.
@@ -743,16 +753,38 @@ class ProductRepository:
             for field, value in product_data.model_dump(exclude_unset=True).items():
                 param_count += 1
                 update_fields.append(f"{field} = ${param_count}")
-                
+
                 # Convert complex types to JSON
                 if field == "dimensions" and value:
-                    params.append(value.model_dump_json() if hasattr(value, "model_dump_json") else json.dumps(value))
+                    params.append(
+                        value.model_dump_json()
+                        if hasattr(value, "model_dump_json")
+                        else json.dumps(value)
+                    )
                 elif field == "measurement_details" and value:
-                    params.append(value.model_dump_json() if hasattr(value, "model_dump_json") else json.dumps(value))
+                    params.append(
+                        value.model_dump_json()
+                        if hasattr(value, "model_dump_json")
+                        else json.dumps(value)
+                    )
                 elif field == "packaging_details" and value:
-                    params.append(json.dumps([p if isinstance(p, dict) else p.model_dump() for p in value]))
+                    params.append(
+                        json.dumps(
+                            [
+                                p if isinstance(p, dict) else p.model_dump()
+                                for p in value
+                            ]
+                        )
+                    )
                 elif field == "images" and value:
-                    params.append(json.dumps([img if isinstance(img, dict) else img.model_dump() for img in value]))
+                    params.append(
+                        json.dumps(
+                            [
+                                img if isinstance(img, dict) else img.model_dump()
+                                for img in value
+                            ]
+                        )
+                    )
                 else:
                     params.append(value)
 
@@ -765,7 +797,7 @@ class ProductRepository:
 
             query = f"""
                 UPDATE products
-                SET {', '.join(update_fields)}
+                SET {", ".join(update_fields)}
                 WHERE id = ${param_count} AND is_active = TRUE
                 RETURNING id, brand_id, brand_category_id, brand_subcategory_id,
                           name, code, description, barcode, hsn_code,
@@ -805,7 +837,7 @@ class ProductRepository:
                 error_msg = "Brand not found"
             elif "brand_category_id" in str(e):
                 error_msg = "Brand category not found"
-            
+
             raise ProductOperationException(
                 message=error_msg,
                 operation="update",
@@ -924,7 +956,9 @@ class ProductRepository:
             async with conn.transaction():
                 return await self._delete_product(product_id, conn)
 
-    async def __get_products_for_shop_id(self, shop_id: UUID, limit: int,offset:int, connection: asyncpg.Connection) -> list[ProductListItem]:
+    async def __get_products_for_shop_id(
+        self, shop_id: UUID, limit: int, offset: int, connection: asyncpg.Connection
+    ) -> list[ProductListItem]:
         """
         Private method to get products available for a specific shop.
 
@@ -948,7 +982,7 @@ class ProductRepository:
             """,
             shop_id,
         )
-        get_products_query ="""
+        get_products_query = """
         SELECT 
             p.id,
             p.name,
@@ -990,18 +1024,24 @@ class ProductRepository:
 
         """
         shop_type = None
-        if areas_releated_shop_id['is_general']:
-            shop_type = 'for_general'
-        elif areas_releated_shop_id['is_modern']:
-            shop_type = 'for_modern'
-        elif areas_releated_shop_id['is_horeca']:
-            shop_type = 'for_horeca'
+        if areas_releated_shop_id["is_general"]:
+            shop_type = "for_general"
+        elif areas_releated_shop_id["is_modern"]:
+            shop_type = "for_modern"
+        elif areas_releated_shop_id["is_horeca"]:
+            shop_type = "for_horeca"
         else:
-            shop_type = 'for_general'  # Defaulting to general if none matched
-        print("Areas related to shop id",areas_releated_shop_id)
-        rows =  await connection.fetch(
+            shop_type = "for_general"  # Defaulting to general if none matched
+        print("Areas related to shop id", areas_releated_shop_id)
+        rows = await connection.fetch(
             get_products_query.format(shop_type=shop_type),
-            [areas_releated_shop_id['division_id'],areas_releated_shop_id['area_id'],areas_releated_shop_id['zone_id'],areas_releated_shop_id['region_id'],areas_releated_shop_id['nation_id']],
+            [
+                areas_releated_shop_id["division_id"],
+                areas_releated_shop_id["area_id"],
+                areas_releated_shop_id["zone_id"],
+                areas_releated_shop_id["region_id"],
+                areas_releated_shop_id["nation_id"],
+            ],
             True,
             limit,
             offset,
@@ -1024,7 +1064,14 @@ class ProductRepository:
             )
 
         return products
-    async def get_products_for_shop_id(self, shop_id: UUID, limit: int = 20, offset: int =0, connection: Optional[asyncpg.Connection] = None) -> list[ProductListItem]:
+
+    async def get_products_for_shop_id(
+        self,
+        shop_id: UUID,
+        limit: int = 20,
+        offset: int = 0,
+        connection: Optional[asyncpg.Connection] = None,
+    ) -> list[ProductListItem]:
         """
         Get products available for a specific shop.
 
@@ -1037,7 +1084,9 @@ class ProductRepository:
             List of products available for the shop
         """
         if connection:
-            return await self.__get_products_for_shop_id(shop_id, limit, offset,connection)
+            return await self.__get_products_for_shop_id(
+                shop_id, limit, offset, connection
+            )
 
         async with self.db_pool.acquire() as conn:
-            return await self.__get_products_for_shop_id(shop_id, limit, offset,conn)
+            return await self.__get_products_for_shop_id(shop_id, limit, offset, conn)

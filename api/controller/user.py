@@ -17,7 +17,6 @@ from api.dependencies.common import CompanyIDDep
 from api.exceptions.user import (
     UserAlreadyExistsException,
     UserNotFoundException,
-    UserOperationException,
     UserValidationException,
 )
 from api.models import ListResponseModel, ResponseModel
@@ -586,4 +585,3 @@ async def check_username_exists(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to check username existence",
         )
-

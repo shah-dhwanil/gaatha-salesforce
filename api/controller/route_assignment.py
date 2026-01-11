@@ -53,7 +53,9 @@ router = APIRouter(
         201: {"description": "Route assignment created successfully"},
         400: {"description": "Validation error or invalid date range"},
         404: {"description": "Route or user not found"},
-        409: {"description": "Assignment already exists for this route-user combination"},
+        409: {
+            "description": "Assignment already exists for this route-user combination"
+        },
     },
     summary="Create a new route assignment",
     description="Assign a user to a route for a specific day of the week",
@@ -349,7 +351,7 @@ async def update_route_assignment(
     - **to_date**: Change the end date (or set to None for open-ended)
     - **day**: Change the day of week (0-6)
 
-    **Note**: 
+    **Note**:
     - route_id and user_id cannot be updated after creation
     - At least one field must be provided for update
     - to_date must be >= from_date (if both are provided)
@@ -560,7 +562,9 @@ async def get_assignments_by_user(
     description="Get all assignments for a specific day of the week",
 )
 async def get_assignments_by_day(
-    day: Annotated[int, Path(description="Day of week (0=Monday, 6=Sunday)", ge=0, le=6)],
+    day: Annotated[
+        int, Path(description="Day of week (0=Monday, 6=Sunday)", ge=0, le=6)
+    ],
     service: RouteAssignmentServiceDep,
     is_active: Annotated[
         bool,
@@ -686,4 +690,3 @@ async def get_active_assignments_count(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get active assignments count",
         )
-

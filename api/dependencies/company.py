@@ -36,6 +36,3 @@ async def get_company_service(
 
 
 CompanyServiceDep = Annotated[CompanyService, Depends(get_company_service)]
-
-
-

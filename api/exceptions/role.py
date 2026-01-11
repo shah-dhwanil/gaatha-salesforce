@@ -85,4 +85,3 @@ class RoleOperationException(AppException):
             **kwargs,
         )
         self.operation = operation
-

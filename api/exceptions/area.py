@@ -64,7 +64,9 @@ class AreaAlreadyExistsException(AreaException):
 class AreaOperationException(AreaException):
     """Exception raised when an area operation fails."""
 
-    def __init__(self, message: str = "Area operation failed", operation: str = "unknown"):
+    def __init__(
+        self, message: str = "Area operation failed", operation: str = "unknown"
+    ):
         self.operation = operation
         self.message = f"{message} (operation: {operation})"
         super().__init__(self.message)
@@ -76,4 +78,3 @@ class AreaInvalidHierarchyException(AreaException):
     def __init__(self, message: str = "Invalid area hierarchy"):
         self.message = message
         super().__init__(self.message)
-

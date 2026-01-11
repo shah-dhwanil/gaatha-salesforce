@@ -23,7 +23,6 @@ from api.models.brand import (
     BrandDetailItem,
     BrandListItem,
     BrandMarginInDB,
-    BrandMargins,
     BrandUpdate,
 )
 
@@ -243,8 +242,10 @@ async def list_brands(
         return ListResponseModel(
             status_code=status.HTTP_200_OK,
             data=brands,
-            records_per_page = limit,
-            total_count= len(brands),  # Note: In real scenarios, total_count should reflect the total available records
+            records_per_page=limit,
+            total_count=len(
+                brands
+            ),  # Note: In real scenarios, total_count should reflect the total available records
         )
 
     except Exception as e:
@@ -387,7 +388,7 @@ async def add_brand_visibility(
         Body(description="Area ID (null for global visibility)", embed=True),
     ] = None,
     brand_service: BrandServiceDep = None,
-)->None:
+) -> None:
     """
     Add visibility for a brand.
 
@@ -523,7 +524,9 @@ async def add_brand_margin(
     If a margin already exists for the brand+area combination, it will be updated.
     """
     try:
-        margin = await brand_service.add_brand_margin(brand_id, margins.area_id, margins)
+        margin = await brand_service.add_brand_margin(
+            brand_id, margins.area_id, margins
+        )
         return ResponseModel(status_code=status.HTTP_201_CREATED, data=margin)
 
     except BrandNotFoundException as e:

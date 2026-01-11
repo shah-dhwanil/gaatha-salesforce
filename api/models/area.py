@@ -11,6 +11,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
+
 class AreaType(str, Enum):
     """Enum for area types in the hierarchy."""
 
@@ -34,7 +35,9 @@ class AreaCreate(BaseModel):
     region_id: Optional[int] = Field(
         None, description="Parent region ID (for AREA level)"
     )
-    zone_id: Optional[int] = Field(None, description="Parent zone ID (for REGION level)")
+    zone_id: Optional[int] = Field(
+        None, description="Parent zone ID (for REGION level)"
+    )
     nation_id: Optional[int] = Field(
         None, description="Parent nation ID (for ZONE level)"
     )
@@ -152,6 +155,7 @@ class AreaCreate(BaseModel):
 
         return self
 
+
 class AreaUpdate(BaseModel):
     """Model for updating an existing area."""
 
@@ -179,6 +183,7 @@ class AreaUpdate(BaseModel):
         if v is not None:
             return v.upper()
         return v
+
     @field_validator("area_id", "region_id", "zone_id", "nation_id")
     @classmethod
     def validate_parent_ids(cls, v: Optional[int]) -> Optional[int]:
@@ -189,6 +194,7 @@ class AreaUpdate(BaseModel):
                 "Parent ID must be a positive integer",
             )
         return v
+
     @model_validator(mode="after")
     def validate_hierarchy(self) -> "AreaUpdate":
         area_type = self.type
@@ -273,7 +279,7 @@ class AreaUpdate(BaseModel):
                     "Zone can only have nation_id as parent",
                 )
 
-        elif area_type == AreaType.NATION.value :
+        elif area_type == AreaType.NATION.value:
             # Nation is top level, should not have any parents
             if (
                 self.area_id is not None
@@ -289,13 +295,14 @@ class AreaUpdate(BaseModel):
         return self
 
 
-
 class AreaInDB(BaseModel):
     """Model for Area as stored in database."""
 
     id: int = Field(..., description="Area unique identifier")
     name: str = Field(..., description="Area name")
-    type: str = Field(..., description="Area type (NATION, ZONE, REGION, AREA, DIVISION)")
+    type: str = Field(
+        ..., description="Area type (NATION, ZONE, REGION, AREA, DIVISION)"
+    )
     area_id: Optional[int] = Field(None, description="Parent area ID")
     region_id: Optional[int] = Field(None, description="Parent region ID")
     zone_id: Optional[int] = Field(None, description="Parent zone ID")
@@ -313,7 +320,9 @@ class AreaResponse(BaseModel):
 
     id: int = Field(..., description="Area unique identifier")
     name: str = Field(..., description="Area name")
-    type: str = Field(..., description="Area type (NATION, ZONE, REGION, AREA, DIVISION)")
+    type: str = Field(
+        ..., description="Area type (NATION, ZONE, REGION, AREA, DIVISION)"
+    )
     area_id: Optional[int] = Field(None, description="Parent area ID")
     region_id: Optional[int] = Field(None, description="Parent region ID")
     zone_id: Optional[int] = Field(None, description="Parent zone ID")
@@ -357,4 +366,3 @@ class AreaHierarchyResponse(BaseModel):
 
     class Config:
         from_attributes = True
-

@@ -128,7 +128,7 @@ class BrandRepository:
                 for margin_data in brand_data.margins:
                     margins_json = margin_data.margins.model_dump_json()
                     area_id = margin_data.area_id if margin_data.area_id else None
-                    
+
                     await connection.execute(
                         """
                         INSERT INTO brand_margins (brand_id, area_id, margins, name)
@@ -147,18 +147,19 @@ class BrandRepository:
             )
 
             return BrandInDB(
-                id =row["id"],
-                name =row["name"],
-                code =row["code"],
-                for_general =row["for_general"],
-                for_modern =row["for_modern"],
-                for_horeca =row["for_horeca"],
-                logo =DocumentInDB.model_validate_json(row["logo"]) if row["logo"] else None,
-                is_active =row["is_active"],
-                is_deleted =row["is_deleted"],
-                created_at =row["created_at"],
-                updated_at =row["updated_at"],
-
+                id=row["id"],
+                name=row["name"],
+                code=row["code"],
+                for_general=row["for_general"],
+                for_modern=row["for_modern"],
+                for_horeca=row["for_horeca"],
+                logo=DocumentInDB.model_validate_json(row["logo"])
+                if row["logo"]
+                else None,
+                is_active=row["is_active"],
+                is_deleted=row["is_deleted"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
             )
 
         except asyncpg.UniqueViolationError as e:
@@ -296,7 +297,9 @@ class BrandRepository:
                 margin_dict = dict(margin_row)
                 # Parse margins JSONB to BrandMargins model
                 if margin_dict.get("margins"):
-                    margin_dict["margins"] = BrandMargins.model_validate_json(margin_dict["margins"])
+                    margin_dict["margins"] = BrandMargins.model_validate_json(
+                        margin_dict["margins"]
+                    )
                 margins.append(BrandMarginInDB(**margin_dict))
 
             brand_dict["area"] = areas if areas else None
@@ -315,7 +318,9 @@ class BrandRepository:
                 for_general=brand_dict["for_general"],
                 for_modern=brand_dict["for_modern"],
                 for_horeca=brand_dict["for_horeca"],
-                logo=DocumentInDB.model_validate_json(brand_dict["logo"]) if brand_dict.get("logo") else None,
+                logo=DocumentInDB.model_validate_json(brand_dict["logo"])
+                if brand_dict.get("logo")
+                else None,
                 area=brand_dict["area"],
                 margins=brand_dict["margins"],
                 is_active=brand_dict["is_active"],
@@ -600,7 +605,11 @@ class BrandRepository:
 
             if brand_data.logo is not None:
                 param_count += 1
-                logo_json = json.dumps(brand_data.logo.model_dump()) if brand_data.logo else None
+                logo_json = (
+                    json.dumps(brand_data.logo.model_dump())
+                    if brand_data.logo
+                    else None
+                )
                 update_fields.append(f"logo = ${param_count}")
                 params.append(logo_json)
 
@@ -615,7 +624,7 @@ class BrandRepository:
 
             query = f"""
                 UPDATE brand
-                SET {', '.join(update_fields)}
+                SET {", ".join(update_fields)}
                 WHERE id = $1 AND is_deleted = FALSE
                 RETURNING id, name, code, for_general, for_modern, for_horeca, logo,
                           is_active, is_deleted, created_at, updated_at
@@ -913,7 +922,9 @@ class BrandRepository:
             )
 
             if result == "UPDATE 0":
-                area_desc = "global visibility" if area_id is None else f"area {area_id}"
+                area_desc = (
+                    "global visibility" if area_id is None else f"area {area_id}"
+                )
                 raise BrandNotFoundException(
                     message=f"Visibility for brand {brand_id} in {area_desc} not found",
                 )
@@ -1015,8 +1026,6 @@ class BrandRepository:
                         operation="add_margin",
                     )
 
-            
-
             # Check if margin exists for this brand and area
             existing_margin = await connection.fetchrow(
                 """
@@ -1047,7 +1056,7 @@ class BrandRepository:
                 param_count += 1
                 query = f"""
                     UPDATE brand_margins
-                    SET {', '.join(update_fields)}
+                    SET {", ".join(update_fields)}
                     WHERE brand_id = ${param_count - 1} AND area_id IS NOT DISTINCT FROM ${param_count} AND is_active = TRUE
                     RETURNING id,name, area_id, margins, is_active, created_at, updated_at
                 """

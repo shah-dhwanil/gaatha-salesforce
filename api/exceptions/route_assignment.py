@@ -26,7 +26,9 @@ class RouteAssignmentNotFoundException(RouteAssignmentException):
         if assignment_id:
             message = f"Route assignment with id {assignment_id} not found"
         elif route_id and user_id:
-            message = f"Route assignment for route {route_id} and user {user_id} not found"
+            message = (
+                f"Route assignment for route {route_id} and user {user_id} not found"
+            )
         elif route_id:
             message = f"Route assignment for route {route_id} not found"
         elif user_id:
@@ -67,7 +69,9 @@ class RouteAssignmentOperationException(RouteAssignmentException):
 class InvalidDateRangeException(RouteAssignmentException):
     """Exception raised when date range is invalid."""
 
-    def __init__(self, message: str = "Invalid date range for route assignment") -> None:
+    def __init__(
+        self, message: str = "Invalid date range for route assignment"
+    ) -> None:
         super().__init__(message)
 
 
@@ -79,4 +83,3 @@ class RouteAssignmentConflictException(RouteAssignmentException):
         message: str = "Route assignment conflicts with existing assignment",
     ) -> None:
         super().__init__(message)
-

@@ -30,7 +30,9 @@ class CompanyNotFoundException(AppException):
                 message = "Company not found"
 
         value = company_id or gst_no or cin_no
-        field = "id" if company_id else "gst_no" if gst_no else "cin_no" if cin_no else None
+        field = (
+            "id" if company_id else "gst_no" if gst_no else "cin_no" if cin_no else None
+        )
 
         super().__init__(
             type=ErrorTypes.ResourceNotFound,
@@ -54,7 +56,9 @@ class CompanyAlreadyExistsException(AppException):
     ) -> None:
         if message is None:
             if gst_no and cin_no:
-                message = f"Company with GST '{gst_no}' or CIN '{cin_no}' already exists"
+                message = (
+                    f"Company with GST '{gst_no}' or CIN '{cin_no}' already exists"
+                )
             elif gst_no:
                 message = f"Company with GST number '{gst_no}' already exists"
             elif cin_no:
@@ -108,4 +112,3 @@ class CompanyOperationException(AppException):
             **kwargs,
         )
         self.operation = operation
-

@@ -21,10 +21,10 @@ class RouteLogNotFoundException(AppException):
                 message = f"Route log with id '{route_log_id}' not found"
             else:
                 message = "Route log not found"
-        
+
         field = "id" if route_log_id is not None else None
         value = route_log_id if route_log_id is not None else None
-        
+
         super().__init__(
             type=ErrorTypes.ResourceNotFound,
             message=message,
@@ -71,4 +71,3 @@ class RouteLogOperationException(AppException):
             **kwargs,
         )
         self.operation = operation
-

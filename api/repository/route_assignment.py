@@ -403,12 +403,28 @@ class RouteAssignmentRepository:
         """
         if connection:
             return await self._list_route_assignments(
-                connection, route_id, user_id, day, is_active, from_date, to_date, limit, offset
+                connection,
+                route_id,
+                user_id,
+                day,
+                is_active,
+                from_date,
+                to_date,
+                limit,
+                offset,
             )
 
         async with self.db_pool.acquire() as conn:
             return await self._list_route_assignments(
-                conn, route_id, user_id, day, is_active, from_date, to_date, limit, offset
+                conn,
+                route_id,
+                user_id,
+                day,
+                is_active,
+                from_date,
+                to_date,
+                limit,
+                offset,
             )
 
     async def _count_route_assignments(
@@ -676,7 +692,9 @@ class RouteAssignmentRepository:
             )
 
         async with self.db_pool.acquire() as conn:
-            return await self._update_route_assignment(assignment_id, assignment_data, conn)
+            return await self._update_route_assignment(
+                assignment_id, assignment_data, conn
+            )
 
     async def _delete_route_assignment(
         self, assignment_id: int, connection: asyncpg.Connection
@@ -922,4 +940,3 @@ class RouteAssignmentRepository:
 
         async with self.db_pool.acquire() as conn:
             return await self._get_assignments_by_user(user_id, conn, is_active)
-

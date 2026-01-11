@@ -20,7 +20,6 @@ from api.exceptions.user import (
 from api.models.user import (
     UserCreate,
     UserDetailsResponse,
-    UserInDB,
     UserListResponse,
     UserResponse,
     UserUpdate,
@@ -246,7 +245,11 @@ class UserService:
 
                 # Count total users for pagination
                 # Note: Repository would need a count method - adding estimate based on response
-                total_count = len(users) if offset == 0 and len(users) < limit else len(users) + offset
+                total_count = (
+                    len(users)
+                    if offset == 0 and len(users) < limit
+                    else len(users) + offset
+                )
 
             logger.debug(
                 "Users retrieved successfully",
@@ -280,7 +283,7 @@ class UserService:
         company_id: UUID,
         role: str,
         is_active: Optional[bool] = None,
-        limit: int = 20, 
+        limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[UserListResponse], int]:
         """Get users by role with optional filtering.
@@ -329,7 +332,11 @@ class UserService:
 
                 # Count total users for pagination
                 # Note: Repository would need a count method - adding estimate based on response
-                total_count = len(users) if offset == 0 and len(users) < limit else len(users) + offset
+                total_count = (
+                    len(users)
+                    if offset == 0 and len(users) < limit
+                    else len(users) + offset
+                )
 
             logger.debug(
                 "Users retrieved successfully",
@@ -403,7 +410,11 @@ class UserService:
 
             return UserResponse(**user.model_dump())
 
-        except (UserNotFoundException, UserValidationException, UserAlreadyExistsException):
+        except (
+            UserNotFoundException,
+            UserValidationException,
+            UserAlreadyExistsException,
+        ):
             raise
         except Exception as e:
             logger.error(
@@ -508,18 +519,18 @@ class UserService:
 
             # Get user details to get company_id
             user_details = await self.repository.get_user_by_id(user_id)
-            
+
             # Prepare update with is_active flag
             # Note: This assumes the repository update method handles is_active
             # If not, you may need to add a specific activate method in repository
-            
+
             logger.info(
                 "User activated successfully",
                 user_id=str(user_id),
             )
 
             # For now, return the user details as response
-            # If you need to actually update the is_active flag, 
+            # If you need to actually update the is_active flag,
             # you'll need to add that functionality to the repository
             return UserResponse(
                 id=user_details.id,
@@ -598,7 +609,7 @@ class UserService:
                 message=f"Failed to get users: {str(e)}",
                 operation="get_by_contact_no",
             ) from e
-    
+
     async def exists_by_contact_no(
         self,
         contact_no: str,
@@ -612,7 +623,7 @@ class UserService:
             True if user exists, False otherwise
         """
         return await self.repository.exists_by_contact_no(contact_no)
-    
+
     async def get_user_by_contact_no_and_company(
         self,
         contact_no: str,

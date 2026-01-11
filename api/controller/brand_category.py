@@ -23,7 +23,6 @@ from api.models.brand_category import (
     BrandCategoryDetailItem,
     BrandCategoryListItem,
     BrandCategoryMarginInDB,
-    BrandCategoryMargins,
     BrandCategoryUpdate,
 )
 
@@ -75,7 +74,9 @@ async def create_brand_category(
     - Margin records (with NULL values if not provided)
     """
     try:
-        brand_category = await brand_category_service.create_brand_category(brand_category_data)
+        brand_category = await brand_category_service.create_brand_category(
+            brand_category_data
+        )
         return ResponseModel(status_code=status.HTTP_201_CREATED, data=brand_category)
 
     except BrandCategoryAlreadyExistsException as e:
@@ -127,7 +128,9 @@ async def get_brand_category(
     - Logo document information
     """
     try:
-        brand_category = await brand_category_service.get_brand_category_by_id(brand_category_id)
+        brand_category = await brand_category_service.get_brand_category_by_id(
+            brand_category_id
+        )
         return ResponseModel(status_code=status.HTTP_200_OK, data=brand_category)
 
     except BrandCategoryNotFoundException as e:
@@ -397,7 +400,7 @@ async def add_brand_category_visibility(
         Body(description="Area ID (null for global visibility)", embed=True),
     ] = None,
     brand_category_service: BrandCategoryServiceDep = None,
-)->None:
+) -> None:
     """
     Add visibility for a brand category.
 
@@ -407,7 +410,9 @@ async def add_brand_category_visibility(
     Multiple visibility records can exist for different areas.
     """
     try:
-        await brand_category_service.add_brand_category_visibility(brand_category_id, area_id)
+        await brand_category_service.add_brand_category_visibility(
+            brand_category_id, area_id
+        )
 
     except BrandCategoryNotFoundException as e:
         logger.info(
@@ -472,7 +477,9 @@ async def remove_brand_category_visibility(
     This is a soft delete operation.
     """
     try:
-        await brand_category_service.remove_brand_category_visibility(brand_category_id, area_id)
+        await brand_category_service.remove_brand_category_visibility(
+            brand_category_id, area_id
+        )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     except BrandCategoryNotFoundException as e:
@@ -516,7 +523,9 @@ async def remove_brand_category_visibility(
 )
 async def add_brand_category_margin(
     brand_category_id: Annotated[int, Path(description="Brand category ID", ge=1)],
-    margins: BrandCategoryMarginAddOrUpdate = Body(..., description="Margin configuration"),
+    margins: BrandCategoryMarginAddOrUpdate = Body(
+        ..., description="Margin configuration"
+    ),
     brand_category_service: BrandCategoryServiceDep = None,
 ):
     """
@@ -533,7 +542,9 @@ async def add_brand_category_margin(
     If a margin already exists for the brand_category+area combination, it will be updated.
     """
     try:
-        margin = await brand_category_service.add_brand_category_margin(brand_category_id, margins.area_id, margins)
+        margin = await brand_category_service.add_brand_category_margin(
+            brand_category_id, margins.area_id, margins
+        )
         return ResponseModel(status_code=status.HTTP_201_CREATED, data=margin)
 
     except BrandCategoryNotFoundException as e:
@@ -587,7 +598,9 @@ async def remove_brand_category_margin(
     This is a soft delete operation.
     """
     try:
-        await brand_category_service.remove_brand_category_margin(brand_category_id, area_id)
+        await brand_category_service.remove_brand_category_margin(
+            brand_category_id, area_id
+        )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     except BrandCategoryNotFoundException as e:

@@ -6,19 +6,34 @@ from api.database import DatabasePool
 from api.exceptions.area import AreaNotFoundException
 from api.exceptions.company import CompanyNotFoundException
 from api.exceptions.role import RoleNotFoundException
-from api.exceptions.user import UserAlreadyExistsException, UserException, UserNotFoundException
-from api.models.user import BankDetails, UserCreate, UserDetailsResponse, UserInDB, UserListResponse, UserUpdate
+from api.exceptions.user import (
+    UserAlreadyExistsException,
+    UserException,
+    UserNotFoundException,
+)
+from api.models.user import (
+    BankDetails,
+    UserCreate,
+    UserDetailsResponse,
+    UserInDB,
+    UserListResponse,
+    UserUpdate,
+)
 from asyncpg import Connection, UniqueViolationError, ForeignKeyViolationError
 import structlog
 
 from api.repository.utils import get_schema_name, set_search_path
+
 logger = structlog.get_logger(__name__)
+
 
 class UserRepository:
     def __init__(self, db_pool: DatabasePool):
         self.db_pool = db_pool
 
-    async def __create_normal_user(self, connection: Connection, user: UserCreate) -> UserInDB:
+    async def __create_normal_user(
+        self, connection: Connection, user: UserCreate
+    ) -> UserInDB:
         """Create a new normal user in the database."""
         uid = uuid7()
         logger.debug(
@@ -46,7 +61,13 @@ class UserRepository:
             logger.debug("User record created in salesforce schema", user_id=str(uid))
 
             await set_search_path(connection, get_schema_name(user.company_id))
-            rs2 = await connection.fetchrow(query2, uid, user.role, user.area_id, user.bank_details.model_dump_json())
+            rs2 = await connection.fetchrow(
+                query2,
+                uid,
+                user.role,
+                user.area_id,
+                user.bank_details.model_dump_json(),
+            )
             logger.debug(
                 "Member record created in company schema",
                 user_id=str(uid),
@@ -82,7 +103,8 @@ class UserRepository:
                 ) from e
             elif "area" in error_msg:
                 raise AreaNotFoundException(
-                    field="area_id", message=f"Area with id {user.area_id} does not exist."
+                    field="area_id",
+                    message=f"Area with id {user.area_id} does not exist.",
                 ) from e
             else:
                 raise UserNotFoundException(
@@ -94,7 +116,9 @@ class UserRepository:
                 username=user.username,
             )
             raise UserException(message="Failed to create user record.")
-        logger.info("User created successfully", user_id=str(uid), username=user.username)
+        logger.info(
+            "User created successfully", user_id=str(uid), username=user.username
+        )
         print("Bank details:", rs2["bank_details"])
         return UserInDB(
             id=rs1["id"],
@@ -110,7 +134,10 @@ class UserRepository:
             bank_details=BankDetails.model_validate_json(rs2["bank_details"]),
             updated_at=rs2["updated_at"],
         )
-    async def __create_super_admin(self, connection: Connection, user: UserCreate) -> UserInDB:
+
+    async def __create_super_admin(
+        self, connection: Connection, user: UserCreate
+    ) -> UserInDB:
         """Create a new super admin user in the database."""
         uid = uuid7()
         logger.debug(
@@ -124,7 +151,9 @@ class UserRepository:
         """
         try:
             await set_search_path(connection, "salesforce")
-            rs1 = await connection.fetchrow(query1, uid, user.username, user.name, user.contact_no)
+            rs1 = await connection.fetchrow(
+                query1, uid, user.username, user.name, user.contact_no
+            )
             logger.debug(
                 "Super admin user record created in salesforce schema", user_id=str(uid)
             )
@@ -146,7 +175,9 @@ class UserRepository:
             )
             raise Exception("Failed to create super admin user record.")
         logger.info(
-            "Super admin user created successfully", user_id=str(uid), username=user.username
+            "Super admin user created successfully",
+            user_id=str(uid),
+            username=user.username,
         )
         return UserInDB(
             id=rs1["id"],
@@ -162,31 +193,47 @@ class UserRepository:
             created_at=rs1["created_at"],
             updated_at=rs1["updated_at"],
         )
-    async def create_user(self, user: UserCreate, connection: Optional[Connection] = None) -> UserInDB:
+
+    async def create_user(
+        self, user: UserCreate, connection: Optional[Connection] = None
+    ) -> UserInDB:
         """Create a new user in the database."""
-        create_user_func  = self.__create_normal_user if not user.is_super_admin else self.__create_super_admin
+        create_user_func = (
+            self.__create_normal_user
+            if not user.is_super_admin
+            else self.__create_super_admin
+        )
         if connection is None:
             async with self.db_pool.transaction() as connection:
                 return await create_user_func(connection, user)
         return await create_user_func(connection, user)
-    
-    async def get_user_by_username(self, username: str, connection: Optional[Connection] = None) -> UserDetailsResponse:
+
+    async def get_user_by_username(
+        self, username: str, connection: Optional[Connection] = None
+    ) -> UserDetailsResponse:
         """Get a user by username."""
         if connection is None:
             async with self.db_pool.acquire() as connection:
                 return await self.__get_user_by_username(connection, username)
         return await self.__get_user_by_username(connection, username)
-    
-    async def __get_user_by_username(self, connection: Connection, username: str) -> UserDetailsResponse:
+
+    async def __get_user_by_username(
+        self, connection: Connection, username: str
+    ) -> UserDetailsResponse:
         """Get a user by username."""
-        company_id = await connection.fetchval("SELECT company_id FROM salesforce.users WHERE username = $1", username)
+        company_id = await connection.fetchval(
+            "SELECT company_id FROM salesforce.users WHERE username = $1", username
+        )
         print("Company ID:", company_id)
         if not company_id:
-            user = await connection.fetchrow("""
+            user = await connection.fetchrow(
+                """
             SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at
             FROM salesforce.users u
             WHERE u.username = $1;
-            """, username)
+            """,
+                username,
+            )
             if not user or not user["is_super_admin"]:
                 raise UserNotFoundException(field="username", message="User not found.")
             return UserDetailsResponse(
@@ -234,23 +281,36 @@ class UserRepository:
             area_id=rs["area_id"],
             area_name=rs["area_name"],
             area_type=rs["area_type"],
-            bank_details=BankDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
+            bank_details=BankDetails.model_validate_json(rs["bank_details"])
+            if rs["bank_details"]
+            else None,
         )
-    async def get_user_by_id(self, user_id: UUID, connection: Optional[Connection] = None) -> UserDetailsResponse:
+
+    async def get_user_by_id(
+        self, user_id: UUID, connection: Optional[Connection] = None
+    ) -> UserDetailsResponse:
         """Get a user by id."""
         if connection is None:
             async with self.db_pool.acquire() as connection:
                 return await self.__get_user_by_id(connection, user_id)
         return await self.__get_user_by_id(connection, user_id)
-    async def __get_user_by_id(self, connection: Connection, user_id: UUID) -> UserDetailsResponse:
+
+    async def __get_user_by_id(
+        self, connection: Connection, user_id: UUID
+    ) -> UserDetailsResponse:
         """Get a user by id."""
-        company_id = await connection.fetchval("SELECT company_id FROM salesforce.users WHERE id = $1", user_id)
+        company_id = await connection.fetchval(
+            "SELECT company_id FROM salesforce.users WHERE id = $1", user_id
+        )
         if not company_id:
-            user = await connection.fetchrow("""
+            user = await connection.fetchrow(
+                """
             SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at
             FROM salesforce.users u
             WHERE u.id = $1;
-            """, user_id)
+            """,
+                user_id,
+            )
             if not user or not user["is_super_admin"]:
                 raise UserNotFoundException(field="username", message="User not found.")
             return UserDetailsResponse(
@@ -298,15 +358,37 @@ class UserRepository:
             area_id=rs["area_id"],
             area_name=rs["area_name"],
             area_type=rs["area_type"],
-            bank_details=BankDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
+            bank_details=BankDetails.model_validate_json(rs["bank_details"])
+            if rs["bank_details"]
+            else None,
         )
-    async def get_users_by_company_id(self, company_id: UUID, is_active: Optional[bool] = None,limit: int = 20, offset: int = 0, connection: Optional[Connection] = None) -> list[UserListResponse]:
+
+    async def get_users_by_company_id(
+        self,
+        company_id: UUID,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
+        connection: Optional[Connection] = None,
+    ) -> list[UserListResponse]:
         """Get users by company id."""
         if connection is None:
             async with self.db_pool.acquire() as connection:
-                return await self.__get_users_by_company_id(connection, company_id, is_active, limit, offset)
-        return await self.__get_users_by_company_id(connection, company_id, is_active, limit, offset)
-    async def __get_users_by_company_id(self, connection: Connection, company_id: UUID, is_active: Optional[bool] = None, limit: int = 20, offset: int = 0) -> list[UserListResponse]:
+                return await self.__get_users_by_company_id(
+                    connection, company_id, is_active, limit, offset
+                )
+        return await self.__get_users_by_company_id(
+            connection, company_id, is_active, limit, offset
+        )
+
+    async def __get_users_by_company_id(
+        self,
+        connection: Connection,
+        company_id: UUID,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[UserListResponse]:
         """Get users by company id."""
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
@@ -322,29 +404,54 @@ class UserRepository:
         query += " ORDER BY u.created_at DESC LIMIT $2 OFFSET $3;"
         await set_search_path(connection, get_schema_name(company_id))
         if is_active is not None:
-            rs = await connection.fetch(query, company_id, limit, offset,is_active)
+            rs = await connection.fetch(query, company_id, limit, offset, is_active)
         else:
             rs = await connection.fetch(query, company_id, limit, offset)
         if not rs:
             raise UserNotFoundException(field="company_id", message="Users not found.")
-        return [UserListResponse(
-            id=record["id"],
-            username=record["username"],
-            name=record["name"],
-            contact_no=record["contact_no"],
-            company_id=record["company_id"],
-            role=record["role"],
-            area_id=record["area_id"],
-            area_name=record["area_name"],
-            is_active=record["is_active"],
-        ) for record in rs]
-    async def get_user_by_role(self,company_id: UUID, role: str, is_active: Optional[bool] = None, limit: int = 20, offset: int = 0, connection: Optional[Connection] = None) -> list[UserListResponse]:
+        return [
+            UserListResponse(
+                id=record["id"],
+                username=record["username"],
+                name=record["name"],
+                contact_no=record["contact_no"],
+                company_id=record["company_id"],
+                role=record["role"],
+                area_id=record["area_id"],
+                area_name=record["area_name"],
+                is_active=record["is_active"],
+            )
+            for record in rs
+        ]
+
+    async def get_user_by_role(
+        self,
+        company_id: UUID,
+        role: str,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
+        connection: Optional[Connection] = None,
+    ) -> list[UserListResponse]:
         """Get users by role."""
         if connection is None:
             async with self.db_pool.acquire() as connection:
-                return await self.__get_user_by_role(connection, company_id, role, is_active, limit, offset)
-        return await self.__get_user_by_role(connection, company_id, role, is_active, limit, offset)
-    async def __get_user_by_role(self, connection: Connection, company_id: UUID, role: str, is_active: Optional[bool] = None, limit: int = 20, offset: int = 0) -> list[UserListResponse]:
+                return await self.__get_user_by_role(
+                    connection, company_id, role, is_active, limit, offset
+                )
+        return await self.__get_user_by_role(
+            connection, company_id, role, is_active, limit, offset
+        )
+
+    async def __get_user_by_role(
+        self,
+        connection: Connection,
+        company_id: UUID,
+        role: str,
+        is_active: Optional[bool] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[UserListResponse]:
         """Get users by role."""
         await set_search_path(connection, get_schema_name(company_id))
         query = """
@@ -360,30 +467,38 @@ class UserRepository:
             query += " AND u.is_active = $4"
         query += " ORDER BY u.created_at DESC LIMIT $2 OFFSET $3;"
         if is_active is not None:
-            rs = await connection.fetch(query, role, limit, offset,is_active)
+            rs = await connection.fetch(query, role, limit, offset, is_active)
         else:
             rs = await connection.fetch(query, role, limit, offset)
         if not rs:
             raise UserNotFoundException(field="role", message="Users not found.")
-        return [UserListResponse(
-            id=record["id"],
-            username=record["username"],
-            name=record["name"],
-            contact_no=record["contact_no"],
-            company_id=record["company_id"],
-            role=record["role"],
-            area_id=record["area_id"],
-            area_name=record["area_name"],
-            is_active=record["is_active"],
-        ) for record in rs]
-    
-    async def update_user(self, user_id: UUID, user: UserUpdate, connection: Optional[Connection] = None) -> UserInDB:
+        return [
+            UserListResponse(
+                id=record["id"],
+                username=record["username"],
+                name=record["name"],
+                contact_no=record["contact_no"],
+                company_id=record["company_id"],
+                role=record["role"],
+                area_id=record["area_id"],
+                area_name=record["area_name"],
+                is_active=record["is_active"],
+            )
+            for record in rs
+        ]
+
+    async def update_user(
+        self, user_id: UUID, user: UserUpdate, connection: Optional[Connection] = None
+    ) -> UserInDB:
         """Update a user."""
         if connection is None:
             async with self.db_pool.acquire() as connection:
                 return await self.__update_user(connection, user_id, user)
         return await self.__update_user(connection, user_id, user)
-    async def __update_user(self, connection: Connection, user_id: UUID, user: UserUpdate) -> UserInDB:
+
+    async def __update_user(
+        self, connection: Connection, user_id: UUID, user: UserUpdate
+    ) -> UserInDB:
         logger.debug(
             "Updating user",
             user_id=str(user_id),
@@ -533,13 +648,18 @@ class UserRepository:
             company_id=rs1["company_id"],
             role=rs2["role"],
             area_id=rs2["area_id"],
-            bank_details=BankDetails.model_validate_json(rs2["bank_details"]) if rs2["bank_details"] else None,
+            bank_details=BankDetails.model_validate_json(rs2["bank_details"])
+            if rs2["bank_details"]
+            else None,
             is_active=rs1["is_active"],
             is_super_admin=rs1["is_super_admin"],
             created_at=rs2["created_at"],
             updated_at=rs2["updated_at"],
         )
-    async def delete_user(self, user_id: UUID, connection: Optional[Connection] = None) -> None:
+
+    async def delete_user(
+        self, user_id: UUID, connection: Optional[Connection] = None
+    ) -> None:
         """Delete a user."""
         if connection is None:
             async with self.db_pool.transaction() as connection:
@@ -571,15 +691,19 @@ class UserRepository:
             logger.debug("Member deleted in company schema", user_id=str(user_id))
 
         logger.info("User soft deleted successfully", user_id=str(user_id))
-    
-    async def get_users_by_contact_no(self, contact_no: str, connection: Optional[Connection] = None) -> list[UserListResponse]:
+
+    async def get_users_by_contact_no(
+        self, contact_no: str, connection: Optional[Connection] = None
+    ) -> list[UserListResponse]:
         """Get users by contact number."""
         if connection is None:
             async with self.db_pool.acquire() as connection:
                 return await self.__get_users_by_contact_no(connection, contact_no)
         return await self.__get_users_by_contact_no(connection, contact_no)
-    
-    async def __get_users_by_contact_no(self, connection: Connection, contact_no: str) -> list[UserListResponse]:
+
+    async def __get_users_by_contact_no(
+        self, connection: Connection, contact_no: str
+    ) -> list[UserListResponse]:
         """Get users by contact number."""
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
@@ -591,28 +715,34 @@ class UserRepository:
         rs = await connection.fetch(query, contact_no)
         if not rs:
             raise UserNotFoundException(field="contact_no", message="Users not found.")
-        return [UserListResponse(
-            id=record["id"],
-            username=record["username"],
-            name=record["name"],
-            contact_no=record["contact_no"],
-            company_id=record["company_id"],
-            company_name=record["company_name"],
-            role=None,
-            area_id=None,
-            area_name=None,
-            is_active=True,
-        ) for record in rs]
-    
-    
-    async def exists_by_contact_no(self, contact_no: str, connection: Optional[Connection] = None) -> bool:
+        return [
+            UserListResponse(
+                id=record["id"],
+                username=record["username"],
+                name=record["name"],
+                contact_no=record["contact_no"],
+                company_id=record["company_id"],
+                company_name=record["company_name"],
+                role=None,
+                area_id=None,
+                area_name=None,
+                is_active=True,
+            )
+            for record in rs
+        ]
+
+    async def exists_by_contact_no(
+        self, contact_no: str, connection: Optional[Connection] = None
+    ) -> bool:
         """Check if a user exists by contact number."""
         if connection is None:
             async with self.db_pool.acquire() as connection:
                 return await self.__exists_by_contact_no(connection, contact_no)
         return await self.__exists_by_contact_no(connection, contact_no)
-    
-    async def __exists_by_contact_no(self, connection: Connection, contact_no: str) -> bool:
+
+    async def __exists_by_contact_no(
+        self, connection: Connection, contact_no: str
+    ) -> bool:
         """Check if a user exists by contact number."""
         query = """
         SELECT 1
@@ -620,18 +750,25 @@ class UserRepository:
         WHERE contact_no = $1 AND is_active = TRUE;
         """
         rs = await connection.fetchval(query, contact_no)
-        print("Exists result:", rs==1)
+        print("Exists result:", rs == 1)
         return rs == 1
-    
 
-    async def get_user_by_contact_no_and_company(self, contact_no: str, company_id: UUID, connection: Optional[Connection] = None) -> UserDetailsResponse:
+    async def get_user_by_contact_no_and_company(
+        self, contact_no: str, company_id: UUID, connection: Optional[Connection] = None
+    ) -> UserDetailsResponse:
         """Get a user by contact number and company id."""
         if connection is None:
             async with self.db_pool.acquire() as connection:
-                return await self.__get_user_by_contact_no_and_company(connection, contact_no, company_id)
-        return await self.__get_user_by_contact_no_and_company(connection, contact_no, company_id)
-    
-    async def __get_user_by_contact_no_and_company(self, connection: Connection, contact_no: str, company_id: Optional[UUID]) -> UserDetailsResponse:
+                return await self.__get_user_by_contact_no_and_company(
+                    connection, contact_no, company_id
+                )
+        return await self.__get_user_by_contact_no_and_company(
+            connection, contact_no, company_id
+        )
+
+    async def __get_user_by_contact_no_and_company(
+        self, connection: Connection, contact_no: str, company_id: Optional[UUID]
+    ) -> UserDetailsResponse:
         """Get a user by contact number and company id."""
         if company_id is None:
             query = """
@@ -641,9 +778,13 @@ class UserRepository:
             """
             rs = await connection.fetchrow(query, contact_no)
             if not rs:
-                raise UserNotFoundException(field="contact_no", message="User not found.")
+                raise UserNotFoundException(
+                    field="contact_no", message="User not found."
+                )
             if not rs["is_super_admin"]:
-                raise UserNotFoundException(field="contact_no", message="User not found.")
+                raise UserNotFoundException(
+                    field="contact_no", message="User not found."
+                )
             return UserDetailsResponse(
                 id=rs["id"],
                 username=rs["username"],
@@ -689,5 +830,7 @@ class UserRepository:
             area_id=rs["area_id"],
             area_name=rs["area_name"],
             area_type=rs["area_type"],
-            bank_details=BankDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
+            bank_details=BankDetails.model_validate_json(rs["bank_details"])
+            if rs["bank_details"]
+            else None,
         )

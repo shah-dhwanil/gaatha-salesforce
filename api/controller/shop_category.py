@@ -377,9 +377,7 @@ async def bulk_create_shop_categories(
         shop_categories = await shop_category_service.bulk_create_shop_categories(
             shop_categories_data
         )
-        return ResponseModel(
-            status_code=status.HTTP_201_CREATED, data=shop_categories
-        )
+        return ResponseModel(status_code=status.HTTP_201_CREATED, data=shop_categories)
 
     except ShopCategoryAlreadyExistsException as e:
         logger.warning(
@@ -424,4 +422,3 @@ async def bulk_create_shop_categories(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to bulk create shop categories",
         )
-

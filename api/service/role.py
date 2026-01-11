@@ -19,7 +19,6 @@ from api.exceptions.role import (
 )
 from api.models.role import (
     RoleCreate,
-    RoleInDB,
     RoleListItem,
     RoleResponse,
     RoleUpdate,
@@ -214,9 +213,7 @@ class RoleService:
             )
             raise
 
-    async def update_role(
-        self, role_name: str, role_data: RoleUpdate
-    ) -> RoleResponse:
+    async def update_role(self, role_name: str, role_data: RoleUpdate) -> RoleResponse:
         """
         Update an existing role.
 

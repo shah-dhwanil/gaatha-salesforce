@@ -61,9 +61,7 @@ class ProductAlreadyExistsException(AppException):
     ) -> None:
         if message is None:
             if product_code and product_name:
-                message = (
-                    f"Product with code '{product_code}' or name '{product_name}' already exists"
-                )
+                message = f"Product with code '{product_code}' or name '{product_name}' already exists"
             elif product_code:
                 message = f"Product with code '{product_code}' already exists"
             elif product_name:

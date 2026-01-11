@@ -27,12 +27,18 @@ class DistributorCreate(BaseModel):
     """Model for creating a new distributor."""
 
     name: str = Field(..., min_length=1, max_length=255, description="Distributor name")
-    contact_person_name: str = Field(..., min_length=1, max_length=255, description="Contact person name")
-    mobile_number: str = Field(..., min_length=10, max_length=15, description="Mobile number")
+    contact_person_name: str = Field(
+        ..., min_length=1, max_length=255, description="Contact person name"
+    )
+    mobile_number: str = Field(
+        ..., min_length=10, max_length=15, description="Mobile number"
+    )
     email: Optional[EmailStr] = Field(None, description="Email address")
     gst_no: str = Field(..., min_length=15, max_length=15, description="GST number")
     pan_no: str = Field(..., min_length=10, max_length=10, description="PAN number")
-    license_no: Optional[str] = Field(None, max_length=255, description="License number")
+    license_no: Optional[str] = Field(
+        None, max_length=255, description="License number"
+    )
     address: str = Field(..., min_length=1, description="Address")
     pin_code: str = Field(..., min_length=6, max_length=6, description="PIN code")
     map_link: Optional[str] = Field(None, description="Map link")
@@ -42,11 +48,19 @@ class DistributorCreate(BaseModel):
     vehicle_4: int = Field(..., ge=0, description="Number of 4-wheeler vehicles")
     salesman_count: int = Field(..., ge=0, description="Number of salesmen")
     area_id: int = Field(..., description="Area ID")
-    for_general: bool = Field(default=False, description="Whether distributor serves general trade")
-    for_modern: bool = Field(default=False, description="Whether distributor serves modern trade")
-    for_horeca: bool = Field(default=False, description="Whether distributor serves HORECA")
+    for_general: bool = Field(
+        default=False, description="Whether distributor serves general trade"
+    )
+    for_modern: bool = Field(
+        default=False, description="Whether distributor serves modern trade"
+    )
+    for_horeca: bool = Field(
+        default=False, description="Whether distributor serves HORECA"
+    )
     bank_details: BankDetails = Field(..., description="Bank details")
-    route_ids: list[int] = Field(default=[], description="List of route IDs to associate with distributor")
+    route_ids: list[int] = Field(
+        default=[], description="List of route IDs to associate with distributor"
+    )
 
     @field_validator("name", "contact_person_name", "address")
     @classmethod
@@ -78,23 +92,47 @@ class DistributorCreate(BaseModel):
 class DistributorUpdate(BaseModel):
     """Model for updating an existing distributor."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=255, description="Distributor name")
-    contact_person_name: Optional[str] = Field(None, min_length=1, max_length=255, description="Contact person name")
-    mobile_number: Optional[str] = Field(None, min_length=10, max_length=15, description="Mobile number")
+    name: Optional[str] = Field(
+        None, min_length=1, max_length=255, description="Distributor name"
+    )
+    contact_person_name: Optional[str] = Field(
+        None, min_length=1, max_length=255, description="Contact person name"
+    )
+    mobile_number: Optional[str] = Field(
+        None, min_length=10, max_length=15, description="Mobile number"
+    )
     email: Optional[EmailStr] = Field(None, description="Email address")
-    gst_no: Optional[str] = Field(None, min_length=15, max_length=15, description="GST number")
-    pan_no: Optional[str] = Field(None, min_length=10, max_length=10, description="PAN number")
-    license_no: Optional[str] = Field(None, max_length=255, description="License number")
+    gst_no: Optional[str] = Field(
+        None, min_length=15, max_length=15, description="GST number"
+    )
+    pan_no: Optional[str] = Field(
+        None, min_length=10, max_length=10, description="PAN number"
+    )
+    license_no: Optional[str] = Field(
+        None, max_length=255, description="License number"
+    )
     address: Optional[str] = Field(None, min_length=1, description="Address")
-    pin_code: Optional[str] = Field(None, min_length=6, max_length=6, description="PIN code")
+    pin_code: Optional[str] = Field(
+        None, min_length=6, max_length=6, description="PIN code"
+    )
     map_link: Optional[str] = Field(None, description="Map link")
-    vehicle_3: Optional[int] = Field(None, ge=0, description="Number of 3-wheeler vehicles")
-    vehicle_4: Optional[int] = Field(None, ge=0, description="Number of 4-wheeler vehicles")
+    vehicle_3: Optional[int] = Field(
+        None, ge=0, description="Number of 3-wheeler vehicles"
+    )
+    vehicle_4: Optional[int] = Field(
+        None, ge=0, description="Number of 4-wheeler vehicles"
+    )
     salesman_count: Optional[int] = Field(None, ge=0, description="Number of salesmen")
     area_id: Optional[int] = Field(None, description="Area ID")
-    for_general: Optional[bool] = Field(None, description="Whether distributor serves general trade")
-    for_modern: Optional[bool] = Field(None, description="Whether distributor serves modern trade")
-    for_horeca: Optional[bool] = Field(None, description="Whether distributor serves HORECA")
+    for_general: Optional[bool] = Field(
+        None, description="Whether distributor serves general trade"
+    )
+    for_modern: Optional[bool] = Field(
+        None, description="Whether distributor serves modern trade"
+    )
+    for_horeca: Optional[bool] = Field(
+        None, description="Whether distributor serves HORECA"
+    )
 
     @field_validator("name", "contact_person_name", "address")
     @classmethod
@@ -148,7 +186,9 @@ class DistributorInDB(BaseModel):
     vehicle_4: int = Field(..., description="Number of 4-wheeler vehicles")
     salesman_count: int = Field(..., description="Number of salesmen")
     area_id: int = Field(..., description="Area ID")
-    for_general: bool = Field(..., description="Whether distributor serves general trade")
+    for_general: bool = Field(
+        ..., description="Whether distributor serves general trade"
+    )
     for_modern: bool = Field(..., description="Whether distributor serves modern trade")
     for_horeca: bool = Field(..., description="Whether distributor serves HORECA")
     is_active: bool = Field(..., description="Whether the distributor is active")
@@ -180,7 +220,9 @@ class DistributorResponse(BaseModel):
     vehicle_4: int = Field(..., description="Number of 4-wheeler vehicles")
     salesman_count: int = Field(..., description="Number of salesmen")
     area_id: int = Field(..., description="Area ID")
-    for_general: bool = Field(..., description="Whether distributor serves general trade")
+    for_general: bool = Field(
+        ..., description="Whether distributor serves general trade"
+    )
     for_modern: bool = Field(..., description="Whether distributor serves modern trade")
     for_horeca: bool = Field(..., description="Whether distributor serves HORECA")
     is_active: bool = Field(..., description="Whether the distributor is active")
@@ -202,7 +244,9 @@ class DistributorListItem(BaseModel):
     address: str = Field(..., description="Address")
     area_id: int = Field(..., description="Area ID")
     area_name: str = Field(..., description="Area name")
-    route_count: int = Field(..., description="Number of routes associated with distributor")
+    route_count: int = Field(
+        ..., description="Number of routes associated with distributor"
+    )
     is_active: bool = Field(..., description="Whether the distributor is active")
 
     class Config:
@@ -231,11 +275,15 @@ class DistributorDetailItem(BaseModel):
     salesman_count: int = Field(..., description="Number of salesmen")
     area_id: int = Field(..., description="Area ID")
     area_name: str = Field(..., description="Area name")
-    for_general: bool = Field(..., description="Whether distributor serves general trade")
+    for_general: bool = Field(
+        ..., description="Whether distributor serves general trade"
+    )
     for_modern: bool = Field(..., description="Whether distributor serves modern trade")
     for_horeca: bool = Field(..., description="Whether distributor serves HORECA")
     bank_details: BankDetails = Field(..., description="Bank details")
-    routes: list[DistributorRouteDetail] = Field(default=[], description="Routes associated with distributor")
+    routes: list[DistributorRouteDetail] = Field(
+        default=[], description="Routes associated with distributor"
+    )
     is_active: bool = Field(..., description="Whether the distributor is active")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
@@ -243,4 +291,3 @@ class DistributorDetailItem(BaseModel):
     class Config:
         from_attributes = True
         ignore_extra = True
-

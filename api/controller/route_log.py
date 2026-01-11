@@ -10,7 +10,6 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
-from fastapi.responses import Response
 import structlog
 
 from api.dependencies.route_log import RouteLogServiceDep
@@ -284,7 +283,7 @@ async def update_route_log(
     - **start_time**: Change the start time
     - **end_time**: Change the end time (or set to None)
 
-    **Note**: 
+    **Note**:
     - route_assignment_id cannot be updated after creation
     - At least one field must be provided for update
     - end_time must be after start_time (if both are provided)
@@ -626,4 +625,3 @@ async def get_route_logs_count(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get route logs count",
         )
-

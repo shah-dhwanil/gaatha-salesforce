@@ -278,7 +278,9 @@ async def list_products(
             status_code=status.HTTP_200_OK,
             data=products,
             records_per_page=limit,
-            total_count=len(products),  # Note: In real scenarios, total_count should reflect the total available records
+            total_count=len(
+                products
+            ),  # Note: In real scenarios, total_count should reflect the total available records
         )
 
     except Exception as e:

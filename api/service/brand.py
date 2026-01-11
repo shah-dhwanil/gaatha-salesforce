@@ -21,7 +21,6 @@ from api.models.brand import (
     BrandDetailItem,
     BrandListItem,
     BrandMarginInDB,
-    BrandMargins,
     BrandUpdate,
 )
 from api.repository.brand import BrandRepository
@@ -320,9 +319,7 @@ class BrandService:
 
     # ==================== Visibility Management ====================
 
-    async def add_brand_visibility(
-        self, brand_id: int, area_id: Optional[int]
-    ) -> None:
+    async def add_brand_visibility(self, brand_id: int, area_id: Optional[int]) -> None:
         """
         Add visibility for a brand in a specific area.
 
@@ -435,9 +432,7 @@ class BrandService:
                 company_id=str(self.company_id),
             )
 
-            margin = await self.repository.add_brand_margin(
-                brand_id, area_id, margins
-            )
+            margin = await self.repository.add_brand_margin(brand_id, area_id, margins)
 
             logger.info(
                 "Brand margin added successfully",
@@ -461,9 +456,7 @@ class BrandService:
             )
             raise
 
-    async def remove_brand_margin(
-        self, brand_id: int, area_id: Optional[int]
-    ) -> None:
+    async def remove_brand_margin(self, brand_id: int, area_id: Optional[int]) -> None:
         """
         Remove margin configuration for a brand in a specific area.
 

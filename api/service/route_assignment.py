@@ -82,7 +82,10 @@ class RouteAssignmentService:
             )
 
             # Additional business logic validation
-            if assignment_data.to_date and assignment_data.to_date < assignment_data.from_date:
+            if (
+                assignment_data.to_date
+                and assignment_data.to_date < assignment_data.from_date
+            ):
                 raise InvalidDateRangeException(
                     message="End date must be greater than or equal to start date"
                 )
@@ -618,4 +621,3 @@ class RouteAssignmentService:
                 message=f"Failed to get assignments by day: {str(e)}",
                 operation="get_by_day",
             ) from e
-

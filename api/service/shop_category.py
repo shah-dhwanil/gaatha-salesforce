@@ -19,7 +19,6 @@ from api.exceptions.shop_category import (
 )
 from api.models.shop_category import (
     ShopCategoryCreate,
-    ShopCategoryInDB,
     ShopCategoryListItem,
     ShopCategoryResponse,
     ShopCategoryUpdate,
@@ -439,9 +438,7 @@ class ShopCategoryService:
         except ShopCategoryNotFoundException:
             return False
 
-    async def check_shop_category_exists_by_name(
-        self, shop_category_name: str
-    ) -> bool:
+    async def check_shop_category_exists_by_name(self, shop_category_name: str) -> bool:
         """
         Check if a shop category exists by name.
 
@@ -514,4 +511,3 @@ class ShopCategoryService:
                 company_id=str(self.company_id),
             )
             raise
-

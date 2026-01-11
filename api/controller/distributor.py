@@ -50,7 +50,9 @@ router = APIRouter(
         201: {"description": "Distributor created successfully"},
         400: {"description": "Validation error"},
         404: {"description": "Area not found"},
-        409: {"description": "Distributor already exists (duplicate code, GST, PAN, etc.)"},
+        409: {
+            "description": "Distributor already exists (duplicate code, GST, PAN, etc.)"
+        },
     },
     summary="Create a new distributor",
     description="Create a new distributor with all required details including vehicles and trade types",
@@ -371,7 +373,9 @@ async def update_distributor(
     - User data (name, contact_no) is automatically synced
     """
     try:
-        distributor = await distributor_service.update_distributor(distributor_id, distributor_data)
+        distributor = await distributor_service.update_distributor(
+            distributor_id, distributor_data
+        )
         return ResponseModel(status_code=status.HTTP_200_OK, data=distributor)
 
     except DistributorNotFoundException as e:
@@ -618,7 +622,9 @@ async def get_distributors_by_area(
     Useful for area planning and management.
     """
     try:
-        distributors = await distributor_service.get_all_active_distributors_by_area(area_id)
+        distributors = await distributor_service.get_all_active_distributors_by_area(
+            area_id
+        )
         return ListResponseModel(
             status_code=status.HTTP_200_OK,
             data=distributors,
@@ -696,7 +702,10 @@ async def get_distributors_by_trade_type(
                 detail="At least one trade type filter must be provided",
             )
 
-        distributors, total_count = await distributor_service.get_distributors_by_trade_type(
+        (
+            distributors,
+            total_count,
+        ) = await distributor_service.get_distributors_by_trade_type(
             for_general=for_general,
             for_modern=for_modern,
             for_horeca=for_horeca,
@@ -793,4 +802,3 @@ async def get_distributor_stats(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get distributor statistics",
         )
-

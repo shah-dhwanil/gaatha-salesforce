@@ -18,7 +18,9 @@ class RouteAssignmentCreate(BaseModel):
     from_date: date = Field(..., description="Assignment start date")
     to_date: Optional[date] = Field(None, description="Assignment end date")
     day: int = Field(..., ge=0, le=6, description="Day of week (0=Monday, 6=Sunday)")
-    is_active: bool = Field(default=True, description="Whether the assignment is active")
+    is_active: bool = Field(
+        default=True, description="Whether the assignment is active"
+    )
 
     @field_validator("route_id")
     @classmethod
@@ -58,7 +60,9 @@ class RouteAssignmentUpdate(BaseModel):
 
     from_date: Optional[date] = Field(None, description="Assignment start date")
     to_date: Optional[date] = Field(None, description="Assignment end date")
-    day: Optional[int] = Field(None, ge=0, le=6, description="Day of week (0=Monday, 6=Sunday)")
+    day: Optional[int] = Field(
+        None, ge=0, le=6, description="Day of week (0=Monday, 6=Sunday)"
+    )
 
     @field_validator("day")
     @classmethod
@@ -143,4 +147,3 @@ class RouteAssignmentDetailItem(BaseModel):
 
     class Config:
         from_attributes = True
-
