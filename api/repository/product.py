@@ -592,7 +592,10 @@ class ProductRepository:
                 SELECT 
                         p.id,
                         p.name,
+                        b.name as brand_name,
                         bc.name AS category_name,
+                        p.packaging_type,
+                        p.measurement_details,
                         p.images,
                         p.is_active,
                         COALESCE(
@@ -617,6 +620,8 @@ class ProductRepository:
                     FROM products p
                     INNER JOIN brand_categories bc 
                         ON p.brand_category_id = bc.id
+                    INNER JOIN brand b 
+                        ON p.brand_id = b.id
                     WHERE p.is_active = TRUE
 
             """
@@ -661,7 +666,14 @@ class ProductRepository:
                     ProductListItem(
                         id=row["id"],
                         name=row["name"],
+                        brand_name=row["brand_name"],
                         category_name=row["category_name"],
+                        packaging_type=row["packaging_type"],
+                        measurement_details=(
+                            MeasurementDetails.model_validate_json(row["measurement_details"])
+                            if row["measurement_details"]
+                            else None
+                        ),
                         images=(
                             [DocumentInDB(**img) for img in json.loads(row["images"])]
                             if row["images"]
@@ -986,7 +998,10 @@ class ProductRepository:
         SELECT 
             p.id,
             p.name,
+            b.name as brand_name,
             bc.name AS category_name,
+            p.packaging_type,
+            p.measurement_details,
             p.images,
             p.is_active,
             COALESCE(
@@ -1011,6 +1026,7 @@ class ProductRepository:
             ) AS price
             FROM products p
             JOIN brand_categories bc ON bc.id = p.brand_category_id
+            JOIN brand b ON b.id = p.brand_id
             WHERE p.is_active = TRUE
             AND EXISTS (
                     SELECT 1
@@ -1052,7 +1068,14 @@ class ProductRepository:
                 ProductListItem(
                     id=row["id"],
                     name=row["name"],
+                    brand_name=row["brand_name"],
                     category_name=row["category_name"],
+                    packaging_type=row["packaging_type"],
+                    measurement_details=(
+                        MeasurementDetails.model_validate_json(row["measurement_details"])
+                        if row["measurement_details"]
+                        else None
+                    ),
                     images=(
                         [DocumentInDB(**img) for img in json.loads(row["images"])]
                         if row["images"]

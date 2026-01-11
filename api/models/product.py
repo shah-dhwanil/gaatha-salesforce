@@ -159,8 +159,8 @@ class ProductUpdate(BaseModel):
     gst_category: Optional[str] = None
     dimensions: Optional[Dimensions] = None
     compliance: Optional[str] = None
-    measurement_details: Optional[MeasurementDetails] = None
-    packaging_type: Optional[str] = None
+    measurement_details: MeasurementDetails
+    packaging_type: str
     packaging_details: Optional[list[PackagingDetails]] = None
     images: Optional[list[DocumentInDB]] = None
     is_active: Optional[bool] = None
@@ -169,7 +169,10 @@ class ProductUpdate(BaseModel):
 class ProductListItem(BaseModel):
     id: int
     name: str
+    brand_name: str
     category_name: str
+    packaging_type: Optional[str] = None
+    measurement_details: Optional[MeasurementDetails] = None
     images: Optional[list[DocumentInDB]] = None
     price: Optional[float] = None
     is_active: bool
