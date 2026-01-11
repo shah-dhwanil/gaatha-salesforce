@@ -180,9 +180,32 @@ class UserRepository:
     async def __get_user_by_username(self, connection: Connection, username: str) -> UserDetailsResponse:
         """Get a user by username."""
         company_id = await connection.fetchval("SELECT company_id FROM salesforce.users WHERE username = $1", username)
+        print("Company ID:", company_id)
         if not company_id:
-            raise UserNotFoundException(field="username", message="User not found.")
-
+            user = await connection.fetchrow("""
+            SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at
+            FROM salesforce.users u
+            WHERE u.username = $1;
+            """, username)
+            if not user or not user["is_super_admin"]:
+                raise UserNotFoundException(field="username", message="User not found.")
+            return UserDetailsResponse(
+                id=user["id"],
+                username=user["username"],
+                name=user["name"],
+                contact_no=user["contact_no"],
+                company_id=None,
+                company_name=None,
+                is_super_admin=user["is_super_admin"],
+                is_active=user["is_active"],
+                created_at=user["created_at"],
+                updated_at=user["updated_at"],
+                role="SUPER_ADMIN",
+                area_id=None,
+                area_name=None,
+                area_type=None,
+                bank_details=None,
+            )
         await set_search_path(connection, get_schema_name(company_id))
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
@@ -190,7 +213,7 @@ class UserRepository:
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
-        JOIN areas a ON m.area_id = a.id
+        LEFT JOIN areas a ON m.area_id = a.id
         WHERE u.username = $1;
         """
         rs = await connection.fetchrow(query, username)
@@ -223,7 +246,30 @@ class UserRepository:
         """Get a user by id."""
         company_id = await connection.fetchval("SELECT company_id FROM salesforce.users WHERE id = $1", user_id)
         if not company_id:
-            raise UserNotFoundException(field="user_id", message="User not found.")
+            user = await connection.fetchrow("""
+            SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at
+            FROM salesforce.users u
+            WHERE u.id = $1;
+            """, user_id)
+            if not user or not user["is_super_admin"]:
+                raise UserNotFoundException(field="username", message="User not found.")
+            return UserDetailsResponse(
+                id=user["id"],
+                username=user["username"],
+                name=user["name"],
+                contact_no=user["contact_no"],
+                company_id=None,
+                company_name=None,
+                is_super_admin=user["is_super_admin"],
+                is_active=user["is_active"],
+                created_at=user["created_at"],
+                updated_at=user["updated_at"],
+                role="SUPER_ADMIN",
+                area_id=None,
+                area_name=None,
+                area_type=None,
+                bank_details=None,
+            )
         await set_search_path(connection, get_schema_name(company_id))
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
@@ -231,7 +277,7 @@ class UserRepository:
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
-        JOIN areas a ON m.area_id = a.id
+        LEFT JOIN areas a ON m.area_id = a.id
         WHERE u.id = $1;
         """
         rs = await connection.fetchrow(query, user_id)
@@ -268,7 +314,7 @@ class UserRepository:
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
-        JOIN areas a ON m.area_id = a.id
+        LEFT JOIN areas a ON m.area_id = a.id
         WHERE u.company_id = $1
         """
         if is_active is not None:
@@ -407,7 +453,7 @@ class UserRepository:
             """
             update_values.append(user_id)
             try:
-                await set_search_path(connection, get_schema_name(company_id))
+                await set_search_path(connection, get_schema_name(user.company_id))
                 rs2 = await connection.fetchrow(update_query, *update_values)
                 logger.debug(
                     "Member record updated in company schema", user_id=str(user_id)
@@ -525,3 +571,123 @@ class UserRepository:
             logger.debug("Member deleted in company schema", user_id=str(user_id))
 
         logger.info("User soft deleted successfully", user_id=str(user_id))
+    
+    async def get_users_by_contact_no(self, contact_no: str, connection: Optional[Connection] = None) -> list[UserListResponse]:
+        """Get users by contact number."""
+        if connection is None:
+            async with self.db_pool.acquire() as connection:
+                return await self.__get_users_by_contact_no(connection, contact_no)
+        return await self.__get_users_by_contact_no(connection, contact_no)
+    
+    async def __get_users_by_contact_no(self, connection: Connection, contact_no: str) -> list[UserListResponse]:
+        """Get users by contact number."""
+        query = """
+        SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
+        c.name as company_name
+        FROM salesforce.users u
+        JOIN salesforce.company c ON u.company_id = c.id
+        WHERE u.contact_no = $1 AND u.is_active = TRUE;
+        """
+        rs = await connection.fetch(query, contact_no)
+        if not rs:
+            raise UserNotFoundException(field="contact_no", message="Users not found.")
+        return [UserListResponse(
+            id=record["id"],
+            username=record["username"],
+            name=record["name"],
+            contact_no=record["contact_no"],
+            company_id=record["company_id"],
+            company_name=record["company_name"],
+            role=None,
+            area_id=None,
+            area_name=None,
+            is_active=True,
+        ) for record in rs]
+    
+    
+    async def exists_by_contact_no(self, contact_no: str, connection: Optional[Connection] = None) -> bool:
+        """Check if a user exists by contact number."""
+        if connection is None:
+            async with self.db_pool.acquire() as connection:
+                return await self.__exists_by_contact_no(connection, contact_no)
+        return await self.__exists_by_contact_no(connection, contact_no)
+    
+    async def __exists_by_contact_no(self, connection: Connection, contact_no: str) -> bool:
+        """Check if a user exists by contact number."""
+        query = """
+        SELECT 1
+        FROM salesforce.users
+        WHERE contact_no = $1 AND is_active = TRUE;
+        """
+        rs = await connection.fetchval(query, contact_no)
+        print("Exists result:", rs==1)
+        return rs == 1
+    
+
+    async def get_user_by_contact_no_and_company(self, contact_no: str, company_id: UUID, connection: Optional[Connection] = None) -> UserDetailsResponse:
+        """Get a user by contact number and company id."""
+        if connection is None:
+            async with self.db_pool.acquire() as connection:
+                return await self.__get_user_by_contact_no_and_company(connection, contact_no, company_id)
+        return await self.__get_user_by_contact_no_and_company(connection, contact_no, company_id)
+    
+    async def __get_user_by_contact_no_and_company(self, connection: Connection, contact_no: str, company_id: Optional[UUID]) -> UserDetailsResponse:
+        """Get a user by contact number and company id."""
+        if company_id is None:
+            query = """
+            SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at
+            FROM salesforce.users u
+            WHERE u.contact_no = $1 AND u.is_super_admin = TRUE;
+            """
+            rs = await connection.fetchrow(query, contact_no)
+            if not rs:
+                raise UserNotFoundException(field="contact_no", message="User not found.")
+            if not rs["is_super_admin"]:
+                raise UserNotFoundException(field="contact_no", message="User not found.")
+            return UserDetailsResponse(
+                id=rs["id"],
+                username=rs["username"],
+                name=rs["name"],
+                contact_no=rs["contact_no"],
+                company_id=None,
+                company_name=None,
+                is_super_admin=rs["is_super_admin"],
+                is_active=rs["is_active"],
+                created_at=rs["created_at"],
+                updated_at=rs["updated_at"],
+                role="SUPER_ADMIN",
+                area_id=None,
+                area_name=None,
+                area_type=None,
+                bank_details=None,
+            )
+        await set_search_path(connection, get_schema_name(company_id))
+        query = """
+        SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
+        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        FROM salesforce.users u
+        JOIN salesforce.company c ON u.company_id = c.id
+        JOIN members m ON u.id = m.id
+        LEFT JOIN areas a ON m.area_id = a.id
+        WHERE u.contact_no = $1 AND u.company_id = $2;
+        """
+        rs = await connection.fetchrow(query, contact_no, company_id)
+        if not rs:
+            raise UserNotFoundException(field="contact_no", message="User not found.")
+        return UserDetailsResponse(
+            id=rs["id"],
+            username=rs["username"],
+            name=rs["name"],
+            contact_no=rs["contact_no"],
+            company_id=rs["company_id"],
+            company_name=rs["company_name"],
+            is_super_admin=rs["is_super_admin"],
+            is_active=rs["is_active"],
+            created_at=rs["created_at"],
+            updated_at=rs["updated_at"],
+            role=rs["role"],
+            area_id=rs["area_id"],
+            area_name=rs["area_name"],
+            area_type=rs["area_type"],
+            bank_details=BankDetails.model_validate_json(rs["bank_details"]) if rs["bank_details"] else None,
+        )

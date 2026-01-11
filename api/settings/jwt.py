@@ -24,6 +24,9 @@ class JWTConfig(BaseModel):
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
         default=7, description="Refresh token expiration time in days"
     )
+    TEMP_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=10, description="Temporary token expiration time in minutes"
+    )
     TOKEN_TYPE: str = Field(
         default="Bearer", description="Token type for authorization header"
     )

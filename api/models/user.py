@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator,ConfigDict
 from pydantic.functional_validators import model_validator
 
 class BankDetails(BaseModel):
@@ -17,7 +17,7 @@ class UserInDB(BaseModel):
     """User model representing database record."""
 
     id: UUID
-    username: str
+    username: Optional[str]
     name: str
     contact_no: str
     company_id: Optional[UUID]
@@ -34,8 +34,8 @@ class UserInDB(BaseModel):
 class UserCreate(BaseModel):
     """Request model for creating a new user."""
 
-    username: str = Field(
-        ..., min_length=1, max_length=100, description="Unique username for the user"
+    username: Optional[str] = Field(
+        None, min_length=1, max_length=100, description="Unique username for the user"
     )
     name: str = Field(
         ..., min_length=1, max_length=255, description="Full name of the user"
@@ -53,11 +53,11 @@ class UserCreate(BaseModel):
 
     @field_validator("username")
     @classmethod
-    def validate_username(cls, v: str) -> str:
+    def validate_username(cls, v: Optional[str]) -> Optional[str]:
         """Validate and clean username."""
-        if not v or not v.strip():
+        if v is not None and not v.strip():
             raise ValueError("Username cannot be empty or whitespace")
-        return v.strip()
+        return v.strip() if v is not None else None
 
     @field_validator("name")
     @classmethod
@@ -144,9 +144,12 @@ class UserUpdate(BaseModel):
 
 class UserListResponse(BaseModel):
     """User list response model."""
+    model_config = ConfigDict(
+        extra='allow',
+    )
 
     id:UUID
-    username: str = Field(..., description="Username of the user")
+    username: Optional[str] = Field(..., description="Username of the user")
     name: str = Field(..., description="Name of the user")
     contact_no: str = Field(..., description="Contact number of the user")
     company_id: Optional[UUID] = Field(..., description="Company ID of the user")
@@ -159,7 +162,7 @@ class UserResponse(BaseModel):
     """User response model."""
 
     id: UUID = Field(..., description="ID of the user")
-    username: str = Field(..., description="Username of the user")
+    username: Optional[str] = Field(None, description="Username of the user")
     name: str = Field(..., description="Name of the user")
     contact_no: str = Field(..., description="Contact number of the user")
     company_id: Optional[UUID] = Field(..., description="Company ID of the user")
@@ -175,7 +178,7 @@ class UserDetailsResponse(BaseModel):
     """User details response model."""
 
     id: UUID = Field(..., description="ID of the user")
-    username: str = Field(..., description="Username of the user")
+    username: Optional[str] = Field(None, description="Username of the user")
     name: str = Field(..., description="Name of the user")
     contact_no: str = Field(..., description="Contact number of the user")
     company_id: Optional[UUID] = Field(..., description="Company ID of the user")
