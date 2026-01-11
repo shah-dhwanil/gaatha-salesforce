@@ -440,309 +440,309 @@ async def delete_area(
         )
 
 
-@router.get(
-    "/parent/{parent_id}/children",
-    response_model=ResponseModel[list[AreaResponse]],
-    responses={
-        200: {"description": "Child areas retrieved successfully"},
-        400: {"description": "Invalid parent type"},
-    },
-    summary="Get child areas of a parent",
-    description="Get all immediate child areas of a specific parent area",
-)
-async def get_areas_by_parent(
-    parent_id: Annotated[int, Path(description="Parent area ID", ge=1)],
-    parent_type: Annotated[
-        str, Query(description="Parent type: nation, zone, region, or area")
-    ],
-    area_service: AreaServiceDep,
-):
-    """
-    Get all child areas of a parent.
+# @router.get(
+#     "/parent/{parent_id}/children",
+#     response_model=ResponseModel[list[AreaResponse]],
+#     responses={
+#         200: {"description": "Child areas retrieved successfully"},
+#         400: {"description": "Invalid parent type"},
+#     },
+#     summary="Get child areas of a parent",
+#     description="Get all immediate child areas of a specific parent area",
+# )
+# async def get_areas_by_parent(
+#     parent_id: Annotated[int, Path(description="Parent area ID", ge=1)],
+#     parent_type: Annotated[
+#         str, Query(description="Parent type: nation, zone, region, or area")
+#     ],
+#     area_service: AreaServiceDep,
+# ):
+#     """
+#     Get all child areas of a parent.
 
-    Returns full area information for all immediate children.
+#     Returns full area information for all immediate children.
 
-    **Parent Types:**
-    - **nation**: Returns all zones under the nation
-    - **zone**: Returns all regions under the zone
-    - **region**: Returns all areas under the region
-    - **area**: Returns all divisions under the area
-    """
-    try:
-        areas = await area_service.get_areas_by_parent(parent_id, parent_type)
-        return ListResponseModel[AreaResponse](
-            status_code=status.HTTP_200_OK,
-            data=areas,
-            records_per_page=20,
-            total_count=len(areas),
-        )
+#     **Parent Types:**
+#     - **nation**: Returns all zones under the nation
+#     - **zone**: Returns all regions under the zone
+#     - **region**: Returns all areas under the region
+#     - **area**: Returns all divisions under the area
+#     """
+#     try:
+#         areas = await area_service.get_areas_by_parent(parent_id, parent_type)
+#         return ListResponseModel[AreaResponse](
+#             status_code=status.HTTP_200_OK,
+#             data=areas,
+#             records_per_page=20,
+#             total_count=len(areas),
+#         )
 
-    except AreaInvalidHierarchyException as e:
-        logger.warning(
-            "Invalid parent type for get children",
-            parent_id=parent_id,
-            parent_type=parent_type,
-            error=e.message,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message,
-        )
+#     except AreaInvalidHierarchyException as e:
+#         logger.warning(
+#             "Invalid parent type for get children",
+#             parent_id=parent_id,
+#             parent_type=parent_type,
+#             error=e.message,
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=e.message,
+#         )
 
-    except Exception as e:
-        logger.error(
-            "Failed to get areas by parent",
-            parent_id=parent_id,
-            parent_type=parent_type,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get child areas",
-        )
-
-
-@router.get(
-    "/hierarchy/nations",
-    response_model=ResponseModel[list[AreaListItem]],
-    responses={
-        200: {"description": "Nations retrieved successfully"},
-    },
-    summary="Get all nations",
-    description="Get all active nations (top-level areas)",
-)
-async def get_all_nations(
-    area_service: AreaServiceDep,
-):
-    """
-    Get all active nations.
-
-    Returns minimal data for all nations. Useful for populating dropdowns.
-    """
-    try:
-        nations = await area_service.get_nations()
-        return ResponseModel(status_code=status.HTTP_200_OK, data=nations)
-
-    except Exception as e:
-        logger.error(
-            "Failed to get nations",
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get nations",
-        )
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get areas by parent",
+#             parent_id=parent_id,
+#             parent_type=parent_type,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get child areas",
+#         )
 
 
-@router.get(
-    "/nation/{nation_id}/zones",
-    response_model=ResponseModel[list[AreaResponse]],
-    responses={
-        200: {"description": "Zones retrieved successfully"},
-    },
-    summary="Get zones by nation",
-    description="Get all zones under a specific nation",
-)
-async def get_zones_by_nation(
-    nation_id: Annotated[int, Path(description="Nation ID", ge=1)],
-    area_service: AreaServiceDep,
-):
-    """
-    Get all zones under a nation.
+# @router.get(
+#     "/hierarchy/nations",
+#     response_model=ResponseModel[list[AreaListItem]],
+#     responses={
+#         200: {"description": "Nations retrieved successfully"},
+#     },
+#     summary="Get all nations",
+#     description="Get all active nations (top-level areas)",
+# )
+# async def get_all_nations(
+#     area_service: AreaServiceDep,
+# ):
+#     """
+#     Get all active nations.
 
-    Convenience endpoint for navigating the hierarchy.
-    """
-    try:
-        zones = await area_service.get_zones_by_nation(nation_id)
-        return ResponseModel(status_code=status.HTTP_200_OK, data=zones)
+#     Returns minimal data for all nations. Useful for populating dropdowns.
+#     """
+#     try:
+#         nations = await area_service.get_nations()
+#         return ResponseModel(status_code=status.HTTP_200_OK, data=nations)
 
-    except Exception as e:
-        logger.error(
-            "Failed to get zones by nation",
-            nation_id=nation_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get zones",
-        )
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get nations",
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get nations",
+#         )
 
 
-@router.get(
-    "/zone/{zone_id}/regions",
-    response_model=ResponseModel[list[AreaResponse]],
-    responses={
-        200: {"description": "Regions retrieved successfully"},
-    },
-    summary="Get regions by zone",
-    description="Get all regions under a specific zone",
-)
-async def get_regions_by_zone(
-    zone_id: Annotated[int, Path(description="Zone ID", ge=1)],
-    area_service: AreaServiceDep,
-):
-    """
-    Get all regions under a zone.
+# @router.get(
+#     "/nation/{nation_id}/zones",
+#     response_model=ResponseModel[list[AreaResponse]],
+#     responses={
+#         200: {"description": "Zones retrieved successfully"},
+#     },
+#     summary="Get zones by nation",
+#     description="Get all zones under a specific nation",
+# )
+# async def get_zones_by_nation(
+#     nation_id: Annotated[int, Path(description="Nation ID", ge=1)],
+#     area_service: AreaServiceDep,
+# ):
+#     """
+#     Get all zones under a nation.
 
-    Convenience endpoint for navigating the hierarchy.
-    """
-    try:
-        regions = await area_service.get_regions_by_zone(zone_id)
-        return ResponseModel(status_code=status.HTTP_200_OK, data=regions)
+#     Convenience endpoint for navigating the hierarchy.
+#     """
+#     try:
+#         zones = await area_service.get_zones_by_nation(nation_id)
+#         return ResponseModel(status_code=status.HTTP_200_OK, data=zones)
 
-    except Exception as e:
-        logger.error(
-            "Failed to get regions by zone",
-            zone_id=zone_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get regions",
-        )
-
-
-@router.get(
-    "/region/{region_id}/areas",
-    response_model=ResponseModel[list[AreaResponse]],
-    responses={
-        200: {"description": "Areas retrieved successfully"},
-    },
-    summary="Get areas by region",
-    description="Get all areas under a specific region",
-)
-async def get_areas_by_region(
-    region_id: Annotated[int, Path(description="Region ID", ge=1)],
-    area_service: AreaServiceDep,
-):
-    """
-    Get all areas under a region.
-
-    Convenience endpoint for navigating the hierarchy.
-    """
-    try:
-        areas = await area_service.get_areas_by_region(region_id)
-        return ResponseModel(status_code=status.HTTP_200_OK, data=areas)
-
-    except Exception as e:
-        logger.error(
-            "Failed to get areas by region",
-            region_id=region_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get areas",
-        )
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get zones by nation",
+#             nation_id=nation_id,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get zones",
+#         )
 
 
-@router.get(
-    "/area/{area_id}/divisions",
-    response_model=ResponseModel[list[AreaResponse]],
-    responses={
-        200: {"description": "Divisions retrieved successfully"},
-    },
-    summary="Get divisions by area",
-    description="Get all divisions under a specific area",
-)
-async def get_divisions_by_area(
-    area_id: Annotated[int, Path(description="Area ID", ge=1)],
-    area_service: AreaServiceDep,
-):
-    """
-    Get all divisions under an area.
+# @router.get(
+#     "/zone/{zone_id}/regions",
+#     response_model=ResponseModel[list[AreaResponse]],
+#     responses={
+#         200: {"description": "Regions retrieved successfully"},
+#     },
+#     summary="Get regions by zone",
+#     description="Get all regions under a specific zone",
+# )
+# async def get_regions_by_zone(
+#     zone_id: Annotated[int, Path(description="Zone ID", ge=1)],
+#     area_service: AreaServiceDep,
+# ):
+#     """
+#     Get all regions under a zone.
 
-    Convenience endpoint for navigating the hierarchy.
-    """
-    try:
-        divisions = await area_service.get_divisions_by_area(area_id)
-        return ResponseModel(status_code=status.HTTP_200_OK, data=divisions)
+#     Convenience endpoint for navigating the hierarchy.
+#     """
+#     try:
+#         regions = await area_service.get_regions_by_zone(zone_id)
+#         return ResponseModel(status_code=status.HTTP_200_OK, data=regions)
 
-    except Exception as e:
-        logger.error(
-            "Failed to get divisions by area",
-            area_id=area_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get divisions",
-        )
-
-
-@router.get(
-    "/exists/{area_id}",
-    response_model=ResponseModel[dict],
-    responses={
-        200: {"description": "Existence check completed"},
-    },
-    summary="Check if area exists",
-    description="Check if an area with the given ID exists",
-)
-async def check_area_exists(
-    area_id: Annotated[int, Path(description="Area ID", ge=1)],
-    area_service: AreaServiceDep,
-):
-    """
-    Check if an area exists.
-
-    Returns a boolean indicating whether the area exists.
-    """
-    try:
-        exists = await area_service.check_area_exists(area_id)
-        return ResponseModel(
-            status_code=status.HTTP_200_OK,
-            data={"area_id": area_id, "exists": exists},
-        )
-
-    except Exception as e:
-        logger.error(
-            "Failed to check area existence",
-            area_id=area_id,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to check area existence",
-        )
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get regions by zone",
+#             zone_id=zone_id,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get regions",
+#         )
 
 
-@router.get(
-    "/count/active",
-    response_model=ResponseModel[dict],
-    responses={
-        200: {"description": "Count retrieved successfully"},
-    },
-    summary="Get active areas count",
-    description="Get the total count of active areas, optionally filtered by type",
-)
-async def get_active_areas_count(
-    area_service: AreaServiceDep,
-    area_type: Annotated[
-        str | None,
-        Query(description="Optional filter by area type"),
-    ] = None,
-):
-    """
-    Get count of active areas.
+# @router.get(
+#     "/region/{region_id}/areas",
+#     response_model=ResponseModel[list[AreaResponse]],
+#     responses={
+#         200: {"description": "Areas retrieved successfully"},
+#     },
+#     summary="Get areas by region",
+#     description="Get all areas under a specific region",
+# )
+# async def get_areas_by_region(
+#     region_id: Annotated[int, Path(description="Region ID", ge=1)],
+#     area_service: AreaServiceDep,
+# ):
+#     """
+#     Get all areas under a region.
 
-    Returns the total number of areas with is_active=true.
-    Optionally filter by area type.
-    """
-    try:
-        count = await area_service.get_active_areas_count(area_type)
-        return ResponseModel(
-            status_code=status.HTTP_200_OK,
-            data={"area_type": area_type or "ALL", "active_count": count},
-        )
+#     Convenience endpoint for navigating the hierarchy.
+#     """
+#     try:
+#         areas = await area_service.get_areas_by_region(region_id)
+#         return ResponseModel(status_code=status.HTTP_200_OK, data=areas)
 
-    except Exception as e:
-        logger.error(
-            "Failed to get active areas count",
-            area_type=area_type,
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get active areas count",
-        )
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get areas by region",
+#             region_id=region_id,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get areas",
+#         )
+
+
+# @router.get(
+#     "/area/{area_id}/divisions",
+#     response_model=ResponseModel[list[AreaResponse]],
+#     responses={
+#         200: {"description": "Divisions retrieved successfully"},
+#     },
+#     summary="Get divisions by area",
+#     description="Get all divisions under a specific area",
+# )
+# async def get_divisions_by_area(
+#     area_id: Annotated[int, Path(description="Area ID", ge=1)],
+#     area_service: AreaServiceDep,
+# ):
+#     """
+#     Get all divisions under an area.
+
+#     Convenience endpoint for navigating the hierarchy.
+#     """
+#     try:
+#         divisions = await area_service.get_divisions_by_area(area_id)
+#         return ResponseModel(status_code=status.HTTP_200_OK, data=divisions)
+
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get divisions by area",
+#             area_id=area_id,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get divisions",
+#         )
+
+
+# @router.get(
+#     "/exists/{area_id}",
+#     response_model=ResponseModel[dict],
+#     responses={
+#         200: {"description": "Existence check completed"},
+#     },
+#     summary="Check if area exists",
+#     description="Check if an area with the given ID exists",
+# )
+# async def check_area_exists(
+#     area_id: Annotated[int, Path(description="Area ID", ge=1)],
+#     area_service: AreaServiceDep,
+# ):
+#     """
+#     Check if an area exists.
+
+#     Returns a boolean indicating whether the area exists.
+#     """
+#     try:
+#         exists = await area_service.check_area_exists(area_id)
+#         return ResponseModel(
+#             status_code=status.HTTP_200_OK,
+#             data={"area_id": area_id, "exists": exists},
+#         )
+
+#     except Exception as e:
+#         logger.error(
+#             "Failed to check area existence",
+#             area_id=area_id,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to check area existence",
+#         )
+
+
+# @router.get(
+#     "/count/active",
+#     response_model=ResponseModel[dict],
+#     responses={
+#         200: {"description": "Count retrieved successfully"},
+#     },
+#     summary="Get active areas count",
+#     description="Get the total count of active areas, optionally filtered by type",
+# )
+# async def get_active_areas_count(
+#     area_service: AreaServiceDep,
+#     area_type: Annotated[
+#         str | None,
+#         Query(description="Optional filter by area type"),
+#     ] = None,
+# ):
+#     """
+#     Get count of active areas.
+
+#     Returns the total number of areas with is_active=true.
+#     Optionally filter by area type.
+#     """
+#     try:
+#         count = await area_service.get_active_areas_count(area_type)
+#         return ResponseModel(
+#             status_code=status.HTTP_200_OK,
+#             data={"area_type": area_type or "ALL", "active_count": count},
+#         )
+
+#     except Exception as e:
+#         logger.error(
+#             "Failed to get active areas count",
+#             area_type=area_type,
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to get active areas count",
+#         )
