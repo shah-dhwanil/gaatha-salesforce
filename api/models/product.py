@@ -139,11 +139,11 @@ class ProductCreate(BaseModel):
     dimensions: Optional[Dimensions] = None
     compliance: Optional[str] = None
     measurement_details: Optional[MeasurementDetails] = None
-    packaging_type: Optional[str] = None
-    packaging_details: Optional[list[PackagingDetails]] = None
+    packaging_type: str
+    packaging_details: list[PackagingDetails]
     images: Optional[list[DocumentInDB]] = None
-    prices: Optional[list[ProductPriceCreate]] = None
-    visibility: Optional[list[ProductVisibilityCreate]] = None
+    prices: list[ProductPriceCreate]
+    visibility: list[ProductVisibilityCreate]
 
 
 class ProductUpdate(BaseModel):
