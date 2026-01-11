@@ -28,6 +28,7 @@ class BrandCategoryMarginInDB(BaseModel):
 
 class BrandCategoryMarginCreate(BaseModel):
     area_id: Optional[int] = Field(default=None)
+    name: str = Field(default="DEFAULT_MARGINS")
     margins: BrandCategoryMargins
 
 

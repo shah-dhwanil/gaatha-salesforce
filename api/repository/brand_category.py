@@ -139,9 +139,10 @@ class BrandCategoryRepository:
 
                     await connection.execute(
                         """
-                        INSERT INTO brand_category_margins (brand_category_id, area_id, margins)
-                        VALUES ($1, $2, $3)
+                        INSERT INTO brand_category_margins (name,brand_category_id, area_id, margins)
+                        VALUES ($1, $2, $3, $4)
                         """,
+                        margin_data.name,
                         brand_category_id,
                         area_id,
                         margins_json,
@@ -150,9 +151,10 @@ class BrandCategoryRepository:
                 # Create a default margins record with NULL area_id and NULL margins
                 await connection.execute(
                     """
-                    INSERT INTO brand_category_margins (brand_category_id, area_id, margins)
-                    VALUES ($1, NULL, NULL)
+                    INSERT INTO brand_category_margins (name,brand_category_id, area_id, margins)
+                    VALUES ($1, $2, NULL, NULL)
                     """,
+                    "DEFAULT_MARGINS",
                     brand_category_id,
                 )
 
