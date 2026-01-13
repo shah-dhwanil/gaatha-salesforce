@@ -27,6 +27,7 @@ class UserInDB(BaseModel):
     role: Optional[str]
     area_id: Optional[int]
     bank_details: Optional[BankDetails]
+    salary: Optional[int] = Field(default=0, description="Salary of the user")
     is_active: bool
     is_super_admin: bool = Field(
         default=False, description="Indicates if the user is a super admin"
@@ -55,6 +56,7 @@ class UserCreate(BaseModel):
     bank_details: Optional[BankDetails] = Field(
         None, description="Bank details of the user"
     )
+    salary: Optional[int] = Field(default=None, description="Salary of the user")
     is_super_admin: bool = Field(
         default=False, description="Indicates if the user is a super admin"
     )
@@ -97,6 +99,9 @@ class UserCreate(BaseModel):
                 raise ValueError("Area ID is required")
             if not self.bank_details:
                 raise ValueError("Bank details are required")
+            if self.role.lower() not in ["retailer","distributor","super_stockist"]:
+                if self.salary is None:
+                    raise ValueError("Salary is required")
         return self
 
 
@@ -116,6 +121,7 @@ class UserUpdate(BaseModel):
     bank_details: Optional[BankDetails] = Field(
         None, description="Bank details of the user"
     )
+    salary: Optional[int] = Field(None, description="Salary of the user")
     company_id: Optional[UUID] = Field(
         None, description="UUID of the company (for schema context)"
     )
@@ -153,6 +159,7 @@ class UserUpdate(BaseModel):
                 self.role is not None,
                 self.area_id is not None,
                 self.bank_details is not None,
+                self.salary is not None,
             ]
         )
 
@@ -190,6 +197,7 @@ class UserResponse(BaseModel):
     bank_details: Optional[BankDetails] = Field(
         ..., description="Bank details of the user"
     )
+    salary: Optional[int] = Field(default=0, description="Salary of the user")
     is_super_admin: bool = Field(..., description="Whether the user is a super admin")
     is_active: bool = Field(..., description="Whether the user is active")
     created_at: datetime = Field(..., description="Creation timestamp")
@@ -216,6 +224,7 @@ class UserDetailsResponse(BaseModel):
     bank_details: Optional[BankDetails] = Field(
         ..., description="Bank details of the user"
     )
+    salary: Optional[int] = Field(default=0, description="Salary of the user")
     is_super_admin: bool = Field(..., description="Whether the user is a super admin")
     is_active: bool = Field(..., description="Whether the user is active")
     created_at: datetime = Field(..., description="Creation timestamp")

@@ -50,7 +50,7 @@ class UserRepository:
         RETURNING *;
         """
         query2 = """
-        INSERT INTO members (id, role, area_id, bank_details) VALUES ($1, $2, $3, $4)
+        INSERT INTO members (id, role, area_id, bank_details, salary) VALUES ($1, $2, $3, $4, $5)
         RETURNING *;
         """
         try:
@@ -67,6 +67,7 @@ class UserRepository:
                 user.role,
                 user.area_id,
                 user.bank_details.model_dump_json() if user.bank_details else None,
+                user.salary if user.salary else None,
             )
             logger.debug(
                 "Member record created in company schema",
@@ -131,6 +132,7 @@ class UserRepository:
             is_active=rs1["is_active"],
             created_at=rs2["created_at"],
             bank_details=BankDetails.model_validate_json(rs2["bank_details"]) if rs2["bank_details"] else None,
+            salary=rs2["salary"],
             updated_at=rs2["updated_at"],
         )
 
@@ -188,6 +190,7 @@ class UserRepository:
             area_id=None,
             is_super_admin=rs1["is_super_admin"],
             bank_details=None,
+            salary=None,
             is_active=rs1["is_active"],
             created_at=rs1["created_at"],
             updated_at=rs1["updated_at"],
@@ -251,11 +254,12 @@ class UserRepository:
                 area_name=None,
                 area_type=None,
                 bank_details=None,
+                salary=None,
             )
         await set_search_path(connection, get_schema_name(company_id))
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
-        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        m.role, m.area_id, m.bank_details, m.salary, c.name as company_name, a.name as area_name, a.type as area_type
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
@@ -283,6 +287,7 @@ class UserRepository:
             bank_details=BankDetails.model_validate_json(rs["bank_details"])
             if rs["bank_details"]
             else None,
+            salary=rs["salary"],
         )
 
     async def get_user_by_id(
@@ -328,11 +333,12 @@ class UserRepository:
                 area_name=None,
                 area_type=None,
                 bank_details=None,
+                salary=None,
             )
         await set_search_path(connection, get_schema_name(company_id))
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
-        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        m.role, m.area_id, m.bank_details, m.salary, c.name as company_name, a.name as area_name, a.type as area_type
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
@@ -360,6 +366,7 @@ class UserRepository:
             bank_details=BankDetails.model_validate_json(rs["bank_details"])
             if rs["bank_details"]
             else None,
+            salary=rs["salary"],
         )
 
     async def get_users_by_company_id(
@@ -391,7 +398,7 @@ class UserRepository:
         """Get users by company id."""
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
-        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        m.role, m.area_id, m.bank_details, m.salary, c.name as company_name, a.name as area_name, a.type as area_type
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
@@ -455,7 +462,7 @@ class UserRepository:
         await set_search_path(connection, get_schema_name(company_id))
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
-        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        m.role, m.area_id, m.bank_details, m.salary, c.name as company_name, a.name as area_name, a.type as area_type
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
@@ -556,6 +563,9 @@ class UserRepository:
         if user.bank_details is not None:
             update_fields.append("bank_details = $" + str(len(update_values) + 1))
             update_values.append(user.bank_details.model_dump_json())
+        if user.salary is not None:
+            update_fields.append("salary = $" + str(len(update_values) + 1))
+            update_values.append(user.salary)
 
         rs2 = None
         if update_fields:
@@ -628,6 +638,7 @@ class UserRepository:
                 role="SUPER_ADMIN",
                 area_id=None,
                 bank_details=None,
+                salary=None,
                 is_active=rs1["is_active"],
                 is_super_admin=rs1["is_super_admin"],
                 created_at=rs1["created_at"],
@@ -650,6 +661,7 @@ class UserRepository:
             bank_details=BankDetails.model_validate_json(rs2["bank_details"])
             if rs2["bank_details"]
             else None,
+            salary=rs2["salary"] if rs2["salary"] else None,
             is_active=rs1["is_active"],
             is_super_admin=rs1["is_super_admin"],
             created_at=rs2["created_at"],
@@ -800,11 +812,12 @@ class UserRepository:
                 area_name=None,
                 area_type=None,
                 bank_details=None,
+                salary=None,
             )
         await set_search_path(connection, get_schema_name(company_id))
         query = """
         SELECT u.id, u.username, u.name, u.contact_no, u.company_id, u.is_super_admin, u.is_active, u.created_at, u.updated_at,
-        m.role, m.area_id, m.bank_details,c.name as company_name, a.name as area_name, a.type as area_type
+        m.role, m.area_id, m.bank_details, m.salary, c.name as company_name, a.name as area_name, a.type as area_type
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
@@ -832,4 +845,5 @@ class UserRepository:
             bank_details=BankDetails.model_validate_json(rs["bank_details"])
             if rs["bank_details"]
             else None,
+            salary=rs["salary"],
         )

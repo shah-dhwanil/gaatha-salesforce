@@ -1,0 +1,5 @@
+-- 
+-- depends: 20260111_01_zFpjY
+
+ALTER TABLE members
+    ADD COLUMN IF NOT EXISTS salary INTEGER DEFAULT 0;
