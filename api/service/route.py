@@ -89,8 +89,6 @@ class RouteService:
 
             return RouteResponse(**route.model_dump())
 
-        except (RouteAlreadyExistsException, RouteOperationException):
-            raise
         except Exception as e:
             logger.error(
                 "Failed to create route in service",
@@ -99,7 +97,7 @@ class RouteService:
                 error=str(e),
                 company_id=str(self.company_id),
             )
-            raise
+            raise e
 
     async def get_route_by_id(self, route_id: int) -> RouteDetailItem:
         """
@@ -311,6 +309,7 @@ class RouteService:
             if not any(
                 [
                     route_data.name,
+                    route_data.area_id is not None,
                     route_data.is_general is not None,
                     route_data.is_modern is not None,
                     route_data.is_horeca is not None,
@@ -340,7 +339,7 @@ class RouteService:
                 error=str(e),
                 company_id=str(self.company_id),
             )
-            raise
+            raise e
 
     async def delete_route(self, route_id: int) -> None:
         """

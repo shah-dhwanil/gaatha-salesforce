@@ -66,7 +66,7 @@ class UserRepository:
                 uid,
                 user.role,
                 user.area_id,
-                user.bank_details.model_dump_json(),
+                user.bank_details.model_dump_json() if user.bank_details else None,
             )
             logger.debug(
                 "Member record created in company schema",
@@ -119,7 +119,6 @@ class UserRepository:
         logger.info(
             "User created successfully", user_id=str(uid), username=user.username
         )
-        print("Bank details:", rs2["bank_details"])
         return UserInDB(
             id=rs1["id"],
             username=rs1["username"],
@@ -131,7 +130,7 @@ class UserRepository:
             is_super_admin=rs1["is_super_admin"],
             is_active=rs1["is_active"],
             created_at=rs2["created_at"],
-            bank_details=BankDetails.model_validate_json(rs2["bank_details"]),
+            bank_details=BankDetails.model_validate_json(rs2["bank_details"]) if rs2["bank_details"] else None,
             updated_at=rs2["updated_at"],
         )
 

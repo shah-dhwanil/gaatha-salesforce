@@ -5,6 +5,8 @@ This repository handles all database operations for routes in a multi-tenant arc
 Routes are stored per tenant schema and are associated with areas.
 """
 
+from api.exceptions.area import AreaNotFoundException
+import asyncpg
 from typing import Optional
 from uuid import UUID
 
@@ -74,7 +76,7 @@ class RouteRepository:
             row = await connection.fetchrow(
                 """
                 INSERT INTO routes (name, code, area_id, is_general, is_modern, is_horeca, is_active)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                VALUES ($1, $2, (SELECT id FROM areas WHERE id = $3 AND type = 'DIVISION'), $4, $5, $6, $7)
                 RETURNING id, name, code, area_id, is_general, is_modern, is_horeca,
                           is_active, created_at, updated_at
                 """,
@@ -95,6 +97,10 @@ class RouteRepository:
                 company_id=str(self.company_id),
             )
             return RouteInDB(**dict(row))
+        except asyncpg.IntegrityConstraintViolationError as e:
+            raise AreaNotFoundException(
+                    message=f"Make sure area with id {route_data.area_id} exists and is of type 'DIVISION'.",
+                ) from e
         except asyncpg.UniqueViolationError as e:
             if "uniq_routes_code" in str(e):
                 raise RouteAlreadyExistsException(route_code=route_data.code)
@@ -105,9 +111,8 @@ class RouteRepository:
                 ) from e
         except asyncpg.ForeignKeyViolationError as e:
             if "fk_routes_area_id" in str(e):
-                raise RouteOperationException(
-                    message=f"Area with id {route_data.area_id} not found",
-                    operation="create",
+                raise AreaNotFoundException(
+                    message=f"Area with id {route_data.area_id} not found.",
                 ) from e
             else:
                 raise RouteOperationException(
@@ -625,7 +630,7 @@ class RouteRepository:
 
             if route_data.area_id is not None:
                 param_count += 1
-                update_fields.append(f"area_id = ${param_count}")
+                update_fields.append(f"area_id = (SELECT id FROM areas WHERE id = ${param_count} AND type = 'DIVISION')")
                 params.append(route_data.area_id)
 
             if route_data.is_general is not None:
@@ -670,6 +675,10 @@ class RouteRepository:
             )
 
             return RouteInDB(**dict(row))
+        except asyncpg.IntegrityConstraintViolationError as e:
+            raise AreaNotFoundException(
+                    message=f"Make sure area with id {route_data.area_id} exists and is of type 'DIVISION'.",
+                ) from e
 
         except (RouteNotFoundException, RouteAlreadyExistsException):
             raise

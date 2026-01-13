@@ -86,7 +86,9 @@ class UserCreate(BaseModel):
     @model_validator(mode="after")
     def validate_user_request(self) -> "UserCreate":
         """Validate the user request."""
-        if not self.is_super_admin:
+        if self.role and self.role.lower() == "admin":
+            return self
+        if not self.is_super_admin :
             if not self.company_id:
                 raise ValueError("Company ID is required")
             if not self.role:

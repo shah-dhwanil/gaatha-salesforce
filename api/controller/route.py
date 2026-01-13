@@ -87,10 +87,7 @@ async def create_route(
             route_name=route_data.name,
             error=e.message,
         )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=e.message,
-        )
+        raise e
 
     except RouteOperationException as e:
         if "Area with id" in e.message:
@@ -110,10 +107,7 @@ async def create_route(
             route_code=route_data.code,
             error=e.message,
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create route",
-        )
+        raise e
 
     except Exception as e:
         logger.error(
@@ -122,10 +116,7 @@ async def create_route(
             route_code=route_data.code,
             error=str(e),
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create route",
-        )
+        raise e
 
 
 @router.get(
@@ -369,10 +360,7 @@ async def update_route(
             route_id=route_id,
             error=e.message,
         )
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=e.message,
-        )
+        raise e
 
     except RouteValidationException as e:
         logger.warning(
@@ -380,21 +368,14 @@ async def update_route(
             route_id=route_id,
             error=e.message,
         )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message,
-        )
-
+        raise e
     except Exception as e:
         logger.error(
             "Failed to update route",
             route_id=route_id,
             error=str(e),
         )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update route",
-        )
+        raise e
 
 
 @router.delete(

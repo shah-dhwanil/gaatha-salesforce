@@ -2,18 +2,12 @@
 Custom exceptions for Area operations.
 """
 
+from api.exceptions.app import ErrorTypes
+from api.exceptions.app import AppException
 from typing import Optional
 
 
-class AreaException(Exception):
-    """Base exception for area operations."""
-
-    def __init__(self, message: str = "Area operation failed"):
-        self.message = message
-        super().__init__(self.message)
-
-
-class AreaNotFoundException(AreaException):
+class AreaNotFoundException(AppException):
     """Exception raised when an area is not found."""
 
     def __init__(
@@ -36,10 +30,10 @@ class AreaNotFoundException(AreaException):
         else:
             self.message = "Area not found"
 
-        super().__init__(self.message)
+        super().__init__(ErrorTypes.ResourceNotFound,self.message, resource="area", field="id" if area_id else None, value=str(area_id) if area_id else None)
 
 
-class AreaAlreadyExistsException(AreaException):
+class AreaAlreadyExistsException(AppException):
     """Exception raised when trying to create an area that already exists."""
 
     def __init__(
@@ -58,10 +52,10 @@ class AreaAlreadyExistsException(AreaException):
         else:
             self.message = "Area already exists"
 
-        super().__init__(self.message)
+        super().__init__(ErrorTypes.ResourceAlreadyExists,self.message, resource="area", field="name" if area_name else None, value=area_name if area_name else None)
 
 
-class AreaOperationException(AreaException):
+class AreaOperationException(AppException):
     """Exception raised when an area operation fails."""
 
     def __init__(
@@ -69,12 +63,12 @@ class AreaOperationException(AreaException):
     ):
         self.operation = operation
         self.message = f"{message} (operation: {operation})"
-        super().__init__(self.message)
+        super().__init__(ErrorTypes.InternalError, self.message, resource="area", field="operation", value=operation)
 
 
-class AreaInvalidHierarchyException(AreaException):
+class AreaInvalidHierarchyException(AppException):
     """Exception raised when area hierarchy validation fails."""
 
     def __init__(self, message: str = "Invalid area hierarchy"):
         self.message = message
-        super().__init__(self.message)
+        super().__init__(ErrorTypes.InvalidOperation, self.message, resource="area", field="hierarchy")
