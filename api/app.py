@@ -27,6 +27,7 @@ from api.controller.user import router as user_router
 from api.controller.auth import router as auth_router
 from api.controller.distributor import router as distributor_router
 from api.controller.product import router as product_router
+from api.controller.agent import router as agent_router
 
 # Load settings
 settings = get_settings()
@@ -83,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(distributor_router, prefix="/api/v1")
     app.include_router(product_router, prefix="/api/v1")
+    app.include_router(agent_router, prefix="/api/v1")
     return app
 
 
