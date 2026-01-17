@@ -1,5 +1,3 @@
-from api.settings.aws import AWSConfig
-from api.settings.agent import AgentConfig
 from pathlib import Path
 import tomllib
 from typing import Any
@@ -74,11 +72,6 @@ class Settings(BaseSettings):
     )
     JWT: JWTConfig = Field(
         default_factory=JWTConfig, description="JWT authentication settings"
-    )
-    AGENT: AgentConfig = Field(default_factory=AgentConfig, description="Agent configuration settings")
-
-    AWS: AWSConfig = Field(
-        default_factory=AWSConfig, description="AWS configuration settings"
     )
 
     model_config = SettingsConfigDict(
