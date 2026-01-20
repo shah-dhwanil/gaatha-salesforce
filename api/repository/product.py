@@ -1113,3 +1113,92 @@ class ProductRepository:
 
         async with self.db_pool.acquire() as conn:
             return await self.__get_products_for_shop_id(shop_id, limit, offset, conn)
+
+    async def get_product_prize_for_shop_id(
+        self,
+        product_id: int,
+        shop_id: UUID,
+        connection: Optional[asyncpg.Connection] = None,
+    ) -> Optional[tuple[float,float, Optional[MinOrderQuantities]]]:
+        """
+        Get product price for a specific shop.
+
+        Args:
+            product_id: ID of the product
+            shop_id: ID of the shop
+            connection: Optional database connection. If not provided, a new one is acquired.
+        Returns:
+            Product price for the shop, or None if not found
+        """
+        try:
+            if connection:
+                return await self.__get_product_price_for_shop_id(
+                    product_id, shop_id, connection
+                )
+
+            async with self.db_pool.acquire() as conn:
+                return await self.__get_product_price_for_shop_id(
+                    product_id, shop_id, conn
+                )
+
+        except Exception as e:
+            logger.error(
+                "Failed to get product price for shop",
+                product_id=product_id,
+                shop_id=str(shop_id),
+                error=str(e),
+                company_id=str(self.company_id),
+            )
+            raise e
+    async def __get_product_price_for_shop_id(
+        self,
+        product_id: int,
+        shop_id: UUID,
+        connection: asyncpg.Connection,
+    ) -> Optional[tuple[float,float, Optional[MinOrderQuantities]]]:
+        """
+        Private method to get product price for a specific shop.
+
+        Args:
+            product_id: ID of the product
+            shop_id: ID of the shop
+            connection: Database connection
+        Returns:
+            Product price for the shop, or None if not found
+        """
+        await set_search_path(connection, self.schema_name)
+        areas_releated_shop_id = await connection.fetchrow(
+            """
+            SELECT r.id  AS route_id, r.is_general as is_general,r.is_modern as is_modern,r.is_horeca as is_horeca, a.id AS division_id, a.area_id as area_id, a.zone_id as zone_id, a.region_id as region_id, a.nation_id as nation_id
+            FROM retailer
+            INNER JOIN routes r ON retailer.route_id = r.id
+            INNER JOIN areas a ON r.area_id = a.id
+            WHERE retailer.id = $1
+            LIMIT 1;
+            """,
+            shop_id,
+        )
+        get_price_query = """
+        SELECT p.gst_rate, pp.mrp, pp.min_order_quantity
+        FROM products p
+        JOIN product_prices pp ON pp.product_id = p.id
+        JOIN areas a ON pp.area_id = a.id
+        WHERE p.id = $1 AND (pp.area_id = ANY ($2) OR pp.area_id IS NULL) AND pp.is_active = TRUE
+        ORDER BY get_area_priority(a.type) DESC
+        LIMIT 1;
+        """
+        rows = await connection.fetchrow(
+            get_price_query,
+            product_id,
+            [
+                areas_releated_shop_id["division_id"],
+                areas_releated_shop_id["area_id"],
+                areas_releated_shop_id["zone_id"],
+                areas_releated_shop_id["region_id"],
+                areas_releated_shop_id["nation_id"],
+            ],
+        )
+        if not rows:
+            return None
+        else:
+            return rows["mrp"], rows["gst_rate"], MinOrderQuantities.model_validate_json(rows["min_order_quantity"]) if rows["min_order_quantity"] else None
