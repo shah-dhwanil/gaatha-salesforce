@@ -12,3 +12,6 @@ class AgentResponse(BaseModel):
     message: str = Field(..., description="The response message from the agent")
     needs_followup: bool = Field(False, description="Indicates if a follow-up question is needed")
     followup_question: Optional[str] = Field(None, description="The follow-up question if applicable")
+
+class ExecuteQueryRequest(BaseModel):
+    sql_query: str = Field(..., description="The SQL query to be executed")

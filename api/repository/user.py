@@ -80,9 +80,20 @@ class UserRepository:
                 username=user.username,
                 error=str(e),
             )
-            raise UserAlreadyExistsException(
-                field="username", message="User with this username already exists."
-            ) from e
+            if "uniq_users_username" in str(e):
+                raise UserAlreadyExistsException(
+                    field="username", message="User with this username already exists."
+                ) from e
+            elif "idx_users_contact_no_company" in str(e):
+                raise UserAlreadyExistsException(
+                    field="contact_no",
+                    message="User with this contact number already exists in the company.",
+                ) from e
+            else:
+                raise UserAlreadyExistsException(
+                    field="Unknown",
+                    message="User already exists with given unique field.",
+                ) from e
         except ForeignKeyViolationError as e:
             logger.error(
                 "User creation failed - foreign key violation",
