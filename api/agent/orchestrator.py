@@ -109,6 +109,20 @@ class SalesAgentOrchestrator:
                     field_type = float
                 elif param.type == "boolean":
                     field_type = bool
+                elif param.type == "array":
+                    # Handle array types - get item type from items dict
+                    item_type = str
+                    if param.items:
+                        item_type_str = param.items.get("type", "string")
+                        if item_type_str == "integer":
+                            item_type = int
+                        elif item_type_str == "number":
+                            item_type = float
+                        elif item_type_str == "boolean":
+                            item_type = bool
+                    field_type = list[item_type]
+                elif param.type == "object":
+                    field_type = dict
                 
                 if param.required:
                     fields[param.name] = (field_type, Field(description=param.description))
@@ -117,9 +131,8 @@ class SalesAgentOrchestrator:
             
             InputModel = create_model(f"{tool_def.name}_input", **fields)
             
-            # Create a wrapper function for the tool
-            async def tool_func(**kwargs):
-                # This will be bound per tool
+            # Create a placeholder async function for the tool
+            async def placeholder_coroutine(**kwargs):
                 return kwargs
             
             # Create the LangChain tool
@@ -127,8 +140,7 @@ class SalesAgentOrchestrator:
                 name=tool_def.name,
                 description=tool_def.description,
                 args_schema=InputModel,
-                func=lambda **kwargs: kwargs,  # Placeholder, we'll handle execution separately
-                coroutine=lambda **kwargs: kwargs,
+                coroutine=placeholder_coroutine,
             )
             langchain_tools.append(lc_tool)
         
@@ -361,4 +373,3 @@ class SalesAgentOrchestrator:
         """Cleanup resources."""
         if self.tool_executor:
             await self.tool_executor.close()
-
