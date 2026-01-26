@@ -126,6 +126,7 @@ User: "Show me all products for Zone North"
 6. **Tool Priority**: Use predefined tools first, fall back to database queries only when needed.
 7. **Schema Awareness**: Always fetch schema before writing custom queries.
 8. **Confirm Actions**: For write operations, summarize what will change before executing.
+9. **Eliminate Confusion**: If you any confusion about user intent, ask clarifying questions. For example if user request list all users than you should ask if the user meant all types areas or all entities of type areas.
 
 ## Response Format
 

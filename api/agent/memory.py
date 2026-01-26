@@ -8,6 +8,7 @@ Supports multiple backends:
 3. AgentCore Memory (for full AgentCore deployment)
 """
 
+from uuid import UUID
 from api.settings import get_settings
 import json
 import time
@@ -15,6 +16,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from typing import Optional
 import boto3
+from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 memory_datastore=None
@@ -52,7 +54,7 @@ class MemoryBackend(ABC):
     """Abstract base class for memory backends."""
     
     @abstractmethod
-    async def save_message(self, session_id: str, message: ChatMessage) -> None:
+    async def save_message(self, session_id: str, user_id: UUID, message: ChatMessage) -> None:
         """Save a message to storage."""
         pass
     
@@ -73,7 +75,7 @@ class InMemoryBackend(MemoryBackend):
     def __init__(self):
         self.sessions: dict[str, list[ChatMessage]] = {}
     
-    async def save_message(self, session_id: str, message: ChatMessage) -> None:
+    async def save_message(self, session_id: str, user_id: UUID, message: ChatMessage) -> None:
         if session_id not in self.sessions:
             self.sessions[session_id] = []
         self.sessions[session_id].append(message)
@@ -103,7 +105,7 @@ class DynamoDBBackend(MemoryBackend):
     
     def __init__(
         self,
-        table_name: str = "sales-agent-chats",
+        table_name: str = "sales-agent-chats-new",
         region: str = "us-west-2",
         ttl_days: int = 30,
     ):
@@ -169,10 +171,11 @@ class DynamoDBBackend(MemoryBackend):
             else:
                 raise
     
-    async def save_message(self, session_id: str, message: ChatMessage) -> None:
+    async def save_message(self, session_id: str, user_id: UUID, message: ChatMessage) -> None:
         await self._ensure_table()
         
         item = {
+            "user_id": str(user_id),
             "session_id": session_id,
             "timestamp": int(message.timestamp * 1000),  # milliseconds
             "role": message.role,
@@ -224,6 +227,22 @@ class DynamoDBBackend(MemoryBackend):
                     "session_id": item["session_id"],
                     "timestamp": item["timestamp"],
                 })
+    
+    async def get_user_sessions(self,user_id: UUID) -> list[str]:
+        """Get all session IDs for given user_id"""
+        await self._ensure_table()
+        
+        response = self.table.query(
+            IndexName="user_idx",  # GSI name
+            KeyConditionExpression=Key("user_id").eq(str(user_id)),
+            ProjectionExpression="session_id"
+        )
+        
+        session_ids = set()
+        for item in response.get("Items", []):
+            session_ids.add(item["session_id"])
+        
+        return list(session_ids)
 
 
 class ChatMemory:
@@ -257,7 +276,7 @@ class ChatMemory:
         
         self.backend_type = backend
     
-    async def save(self, session_id: str, role: str, content: str, **kwargs) -> None:
+    async def save(self, session_id: str, user_id: UUID, role: str, content: str, **kwargs) -> None:
         """Save a message."""
         message = ChatMessage(
             role=role,
@@ -266,7 +285,7 @@ class ChatMemory:
             tool_calls=kwargs.get("tool_calls"),
             metadata=kwargs.get("metadata"),
         )
-        await self._backend.save_message(session_id, message)
+        await self._backend.save_message(session_id, user_id, message)
     
     async def get_history(self, session_id: str, limit: int = 20) -> list[ChatMessage]:
         """Get conversation history."""
@@ -298,4 +317,11 @@ class ChatMemory:
                 lc_messages.append(AIMessage(content=msg.content))
         
         return lc_messages
+    
+    async def get_user_sessions(self,user_id: UUID) -> list[str]:
+        """Get all session IDs for given user_id (DynamoDB only)"""
+        # if self.backend_type != "dynamodb":
+        #     raise NotImplementedError("get_user_sessions is only supported for DynamoDB backend.")
+        
+        return await self._backend.get_user_sessions(user_id)
 

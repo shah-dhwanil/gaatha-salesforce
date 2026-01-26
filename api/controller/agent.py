@@ -1,3 +1,7 @@
+from api.models.agent import ChatHistory
+from api.models.agent import ChatSessionList
+from api.agent.memory import ChatMemory
+from uuid import UUID
 from api.repository.utils import get_schema_name
 from api.controller.company import get_company_schema
 from api.repository.utils import set_search_path
@@ -527,14 +531,29 @@ table_schema_dict = {
     }
 }
 
+@router.get("/{user_id}/chat")
+async def get_chat(user_id: UUID,config: Settings = Depends(get_settings)):
+    """Endpoint to retrieve chat history for a user."""
+    orchestrator = ChatMemory(backend=config.AGENT.MEMORY_BACKEND, table_name=config.AGENT.TABLE_NAME,region=config.AWS.region_name)
+    chat_history = await orchestrator.get_user_sessions(user_id)
+    return  ChatSessionList(sessions=chat_history)
+
+@router.get("/{user_id}/chat/{session_id}")
+async def get_chat_session(user_id: UUID, session_id: str,config: Settings = Depends(get_settings)):
+    """Endpoint to retrieve a specific chat session for a user."""
+    orchestrator = ChatMemory(backend=config.AGENT.MEMORY_BACKEND, table_name=config.AGENT.TABLE_NAME,region=config.AWS.region_name)
+    chat_session = await orchestrator.get_history(session_id)
+    return ChatHistory(items=[ChatHistory.ChatHistoryItem(role=msg.role, message=msg.content) for msg in chat_session])
+
 @router.post("/chat",response_model=AgentResponse)
 async def chat_with_agent(request:AgentRequest,config: Settings = Depends(get_settings)) -> AgentResponse:
     """Endpoint to handle chat interactions with the sales agent."""
 
     orchestrator = SalesAgentOrchestrator(config=config.AGENT)
-    response = await orchestrator.process_message(request.user_message, request.session_id,None,request.company_id)
+    response = await orchestrator.process_message(request.user_message,request.user_id, request.session_id,None,request.company_id)
     logger.info("Agent Response",session_id=request.session_id,response=response)
     return AgentResponse(session_id=request.session_id,message=response.message,needs_followup=response.needs_followup,followup_question=response.followup_question)
+
 
 @router.get("/table_schema",response_model=dict)
 async def get_table_schema(table_name:Annotated[list[str], Query(...)]):

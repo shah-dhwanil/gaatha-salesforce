@@ -149,6 +149,7 @@ class SalesAgentOrchestrator:
     async def process_message(
         self,
         user_message: str,
+        user_id:UUID,
         session_id: str = "default",
         auth_token: Optional[str] = None,
         company_id: Optional[str] = None,
@@ -185,8 +186,8 @@ class SalesAgentOrchestrator:
             self.followup_counts[session_id] += 1
             
             # Store in persistent memory
-            await self.memory.save(session_id, "user", user_message)
-            await self.memory.save(session_id, "assistant", followup)
+            await self.memory.save(session_id, user_id, "user", user_message)
+            await self.memory.save(session_id, user_id, "assistant", followup)
             
             return AgentResponse(
                 message=followup,
@@ -212,9 +213,10 @@ class SalesAgentOrchestrator:
         )
         
         # Store in persistent memory
-        await self.memory.save(session_id, "user", user_message)
+        await self.memory.save(session_id, user_id, "user", user_message)
         await self.memory.save(
             session_id, 
+            user_id,
             "assistant", 
             response.message,
             tool_calls=response.tools_used,
