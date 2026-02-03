@@ -4,11 +4,11 @@ Agent configuration settings using Pydantic.
 from pydantic import BaseModel, Field
 class AgentConfig(BaseModel):
     ORCHESTRATOR_MODEL: str = Field(
-        default="gpt-4o",
+        default="gpt-5-mini",
         description="The model used for the agent orchestrator",
     )
     ORCHESTRATOR_MAX_TOKENS: int = Field(
-        default=1024,
+        default=4096,
         description="Maximum tokens for the agent orchestrator model",
     )
     ORCHESTRATOR_TEMPERATURE: float = Field(
@@ -16,15 +16,15 @@ class AgentConfig(BaseModel):
         description="Temperature setting for the agent orchestrator model",
     )
     SIMPLE_MODEL: str = Field(
-        default="gpt-4o",
+        default="gpt-5-mini",
         description="The model used for simple agent tasks",
     )
     SIMPLE_MAX_TOKENS: int = Field(
-        default=1024,
+        default=2048,
         description="Maximum tokens for the simple agent model",
     )
     SIMPLE_TEMPERATURE: float = Field(
-        default=0.0,
+        default=0.1,
         description="Temperature setting for the simple agent model",
     )
     COMPLEXITY_THRESHOLD: float = Field(

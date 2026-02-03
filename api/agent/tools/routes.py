@@ -11,8 +11,12 @@ from api.agent.tools.base import ToolDefinition, ToolParameter
 create_route_tool = ToolDefinition(
     name="create_route",
     description=(
-        "Create a new route associated with an area (division). "
-        "Routes can have multiple type flags: is_general (general trade), "
+        "Create a new SALES ROUTE - a sales territory/organizational unit for field sales. "
+        "NOT a geographic path or network route. "
+        "A sales route is simply a named territory within a division where a salesperson operates. "
+        "NO geographic data needed: no coordinates, paths, start/end points, or retailers. "
+        "Retailers and assignments are added separately AFTER route creation. "
+        "Routes have trade type flags: is_general (general trade), "
         "is_modern (modern trade), or is_horeca (hotel/restaurant/café). "
         "Exactly one trade type must be selected. "
         "Each route must have a unique code."
