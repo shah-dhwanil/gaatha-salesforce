@@ -477,7 +477,7 @@ class UserRepository:
         FROM salesforce.users u
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
-        JOIN areas a ON m.area_id = a.id
+        LEFT JOIN areas a ON m.area_id = a.id
         WHERE m.role = $1
         """
         if is_active is not None:
