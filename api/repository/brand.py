@@ -261,10 +261,6 @@ class BrandRepository:
 
             brand_dict = dict(row)
 
-            # Parse logo JSON to DocumentInDB
-            if brand_dict.get("logo"):
-                brand_dict["logo"] = DocumentInDB(**brand_dict["logo"])
-
             # Get areas associated with brand visibility
             area_rows = await connection.fetch(
                 """

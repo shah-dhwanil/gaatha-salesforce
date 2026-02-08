@@ -316,7 +316,7 @@ async def list_users_by_role(
     try:
         users, total_count = await user_service.get_users_by_role(
             company_id=company_id,
-            role=role_name,
+            role=role_name.upper(),
             is_active=is_active,
             limit=limit,
             offset=offset,

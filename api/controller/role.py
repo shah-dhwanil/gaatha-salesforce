@@ -116,7 +116,7 @@ async def get_role(
     Returns complete role information including permissions and timestamps.
     """
     try:
-        role = await role_service.get_role_by_name(role_name)
+        role = await role_service.get_role_by_name(role_name.upper())
         return ResponseModel(status_code=status.HTTP_200_OK, data=role)
 
     except RoleNotFoundException as e:
@@ -240,7 +240,7 @@ async def update_role(
     - **permissions**: Optional new permissions list
     """
     try:
-        role = await role_service.update_role(role_name, role_data)
+        role = await role_service.update_role(role_name.upper(), role_data)
         return ResponseModel(status_code=status.HTTP_200_OK, data=role)
 
     except RoleNotFoundException as e:
@@ -299,7 +299,7 @@ async def delete_role(
     The role will still exist in the database but won't be active.
     """
     try:
-        await role_service.delete_role(role_name)
+        await role_service.delete_role(role_name.upper())
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     except RoleNotFoundException as e:
@@ -336,77 +336,77 @@ async def delete_role(
         )
 
 
-@router.post(
-    "/bulk",
-    response_model=ResponseModel[list[RoleResponse]],
-    status_code=status.HTTP_201_CREATED,
-    responses={
-        201: {"description": "Roles created successfully"},
-        400: {"description": "Validation error"},
-        409: {"description": "One or more roles already exist"},
-    },
-    summary="Bulk create roles",
-    description="Create multiple roles in a single transaction",
-)
-async def bulk_create_roles(
-    roles_data: list[RoleCreate],
-    role_service: RoleServiceDep,
-):
-    """
-    Bulk create multiple roles.
+# @router.post(
+#     "/bulk",
+#     response_model=ResponseModel[list[RoleResponse]],
+#     status_code=status.HTTP_201_CREATED,
+#     responses={
+#         201: {"description": "Roles created successfully"},
+#         400: {"description": "Validation error"},
+#         409: {"description": "One or more roles already exist"},
+#     },
+#     summary="Bulk create roles",
+#     description="Create multiple roles in a single transaction",
+# )
+# async def bulk_create_roles(
+#     roles_data: list[RoleCreate],
+#     role_service: RoleServiceDep,
+# ):
+#     """
+#     Bulk create multiple roles.
 
-    All roles are created in a single transaction.
-    If any role fails, the entire operation is rolled back.
+#     All roles are created in a single transaction.
+#     If any role fails, the entire operation is rolled back.
 
-    - **roles_data**: List of role objects to create
-    """
-    try:
-        roles = await role_service.bulk_create_roles(roles_data)
-        return ResponseModel(status_code=status.HTTP_201_CREATED, data=roles)
+#     - **roles_data**: List of role objects to create
+#     """
+#     try:
+#         roles = await role_service.bulk_create_roles(roles_data)
+#         return ResponseModel(status_code=status.HTTP_201_CREATED, data=roles)
 
-    except RoleAlreadyExistsException as e:
-        logger.warning(
-            "Bulk create failed - roles already exist",
-            count=len(roles_data),
-            error=e.message,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=e.message,
-        )
+#     except RoleAlreadyExistsException as e:
+#         logger.warning(
+#             "Bulk create failed - roles already exist",
+#             count=len(roles_data),
+#             error=e.message,
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_409_CONFLICT,
+#             detail=e.message,
+#         )
 
-    except RoleValidationException as e:
-        logger.warning(
-            "Bulk create validation failed",
-            count=len(roles_data),
-            error=e.message,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message,
-        )
+#     except RoleValidationException as e:
+#         logger.warning(
+#             "Bulk create validation failed",
+#             count=len(roles_data),
+#             error=e.message,
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=e.message,
+#         )
 
-    except RoleOperationException as e:
-        logger.error(
-            "Bulk create operation failed",
-            count=len(roles_data),
-            error=e.message,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=e.message,
-        )
+#     except RoleOperationException as e:
+#         logger.error(
+#             "Bulk create operation failed",
+#             count=len(roles_data),
+#             error=e.message,
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=e.message,
+#         )
 
-    except Exception as e:
-        logger.error(
-            "Failed to bulk create roles",
-            count=len(roles_data),
-            error=str(e),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to bulk create roles",
-        )
+#     except Exception as e:
+#         logger.error(
+#             "Failed to bulk create roles",
+#             count=len(roles_data),
+#             error=str(e),
+#         )
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to bulk create roles",
+#         )
 
 
 # @router.get(

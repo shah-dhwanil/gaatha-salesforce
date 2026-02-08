@@ -40,7 +40,7 @@ class RoleCreate(BaseModel):
         """Validate and normalize role name."""
         if not v or not v.strip():
             raise ValueError("Role name cannot be empty")
-        return v.strip()
+        return v.strip().upper()
 
 
 class RoleUpdate(BaseModel):

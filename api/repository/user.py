@@ -488,7 +488,7 @@ class UserRepository:
         else:
             rs = await connection.fetch(query, role, limit, offset)
         if not rs:
-            raise UserNotFoundException(field="role", message="Users not found.")
+            return []
         return [
             UserListResponse(
                 id=record["id"],

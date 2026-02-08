@@ -88,6 +88,8 @@ class UserCreate(BaseModel):
     @model_validator(mode="after")
     def validate_user_request(self) -> "UserCreate":
         """Validate the user request."""
+        if self.role:
+            self.role = self.role.upper()
         if self.role and self.role.lower() == "admin":
             return self
         if not self.is_super_admin :
@@ -148,7 +150,7 @@ class UserUpdate(BaseModel):
         """Validate and clean role."""
         if v is not None and not v.strip():
             raise ValueError("Role cannot be empty or whitespace")
-        return v.strip() if v is not None else None
+        return v.strip().upper() if v is not None else None
 
     def has_updates(self) -> bool:
         """Check if at least one field is provided for update."""
