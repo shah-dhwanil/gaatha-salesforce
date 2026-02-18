@@ -1,377 +1,420 @@
 """
-Main Agent Orchestrator.
+Sales Agent Orchestrator -- the main LangGraph StateGraph.
 
-Coordinates:
-1. Query analysis and routing (via ModelRouter)
-2. Tool selection and execution
-3. Follow-up question generation when needed
-4. Response formatting
-5. Persistent chat memory storage
+Flow
+----
+1. ``load_history``    -- fetch recent chat from DynamoDB, inject as context
+2. ``classify_intent`` -- use gpt-5-mini to decide query / action / followup
+3. Conditional routing:
+   - "query"           -> ``run_query``   -> ``save_memory`` -> END
+   - "action"          -> ``run_action``  -> ``save_memory`` -> END
+   - "followup_needed" -> ``save_memory`` -> END  (returns follow-up question)
+4. ``save_memory``     -- persist the Q+A pair to DynamoDB
 """
 
-from uuid import UUID
-from langchain_openai import ChatOpenAI
-import json
-from dataclasses import dataclass, field
-from typing import Any, Optional
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
-from langchain_core.tools import tool as langchain_tool
+from __future__ import annotations
 
+import json
+import traceback
+from dataclasses import dataclass
+from typing import Any
+
+import structlog
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, StateGraph
+
+from api.agent.agents.action_agent import run_action_agent
+from api.agent.agents.query_agent import run_query_agent
+from api.agent.memory import ChatMemory
+from api.agent.prompts import ORCHESTRATOR_SYSTEM_PROMPT
+from api.agent.state import AgentState
 from api.settings.agent import AgentConfig
-from api.agent.router import ModelRouter, QueryAnalysis
-from api.agent.prompts.system import SYSTEM_PROMPT, FOLLOWUP_PROMPT
-from api.agent.tools import ALL_TOOLS
-from api.agent.tools.base import ToolDefinition, ToolExecutor
-from api.agent.memory import ChatMemory, ChatMessage
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
-class AgentResponse:
-    """Response from the agent."""
+class OrchestratorResponse:
+    """Value object returned by ``SalesAgentOrchestrator.process_message``."""
+
     message: str
     needs_followup: bool = False
-    followup_question: Optional[str] = None
-    tools_used: list[str] = field(default_factory=list)
-    metadata: dict = field(default_factory=dict)
+    followup_question: str | None = None
+    sub_agent_used: str | None = None
+    tool_calls: list[dict] | None = None
 
 
 class SalesAgentOrchestrator:
-    """
-    Main orchestrator for the Sales Management AI Agent.
-    
-    Handles:
-    - Query routing between Haiku and Sonnet
-    - Tool execution via FastAPI backend
-    - Conversation management with persistent storage
-    - Follow-up question generation
-    """
-    
-    def __init__(self, config: AgentConfig):
-        self.config = config
-        self.company_id: Optional[UUID] = None
-        self.router = ModelRouter(self.config)
-        print(self.config)
-        # Initialize LangChain models
-        self.orchestrator_llm = ChatOpenAI(
-            model=self.config.ORCHESTRATOR_MODEL,
-            temperature=self.config.ORCHESTRATOR_TEMPERATURE,
-            max_tokens=self.config.ORCHESTRATOR_MAX_TOKENS,
-            api_key=self.config.OPENAI_API_KEY,
+    """High-level entry-point that builds and runs the LangGraph workflow."""
+
+    def __init__(self, config: AgentConfig) -> None:
+        self._config = config
+        logger.info(
+            "[ORCHESTRATOR] Initializing orchestrator",
+            orchestrator_model=config.ORCHESTRATOR_MODEL,
+            simple_model=config.SIMPLE_MODEL,
+            complex_model=config.COMPLEX_MODEL,
+            memory_backend=config.MEMORY_BACKEND,
+            backend_url=config.BACKEND_URL,
         )
-        
-        self.simple_llm = ChatOpenAI(
-            model=self.config.SIMPLE_MODEL,
-            temperature=self.config.SIMPLE_TEMPERATURE,
-            max_tokens=self.config.SIMPLE_MAX_TOKENS,
-            api_key=self.config.OPENAI_API_KEY,
+        self._memory = ChatMemory(
+            backend=config.MEMORY_BACKEND,
+            table_name=config.TABLE_NAME,
         )
-        
-        # Tool executor (initialized with company context)
-        self.tool_executor: Optional[ToolExecutor] = None
-        
-        # Available tools
-        self.tools = {tool.name: tool for tool in ALL_TOOLS}
-        
-        # Persistent memory (DynamoDB in Lambda, in-memory locally)
-        self.memory = ChatMemory(
-            backend=self.config.MEMORY_BACKEND,
-            table_name=self.config.TABLE_NAME,
-            ttl_days=self.config.MEMORY_RETENTION_DAYS,
-        )
-        
-        # Follow-up tracking (in-memory, resets on cold start)
-        self.followup_counts: dict[str, int] = {}
-    
-    def _get_tool_executor(self, auth_token: Optional[str] = None) -> ToolExecutor:
-        """Get or create tool executor."""
-        if self.tool_executor is None:
-            self.tool_executor = ToolExecutor(
-                backend_url=self.config.BACKEND_URL,
-                company_id=self.company_id or None,
-                auth_token=auth_token,
-            )
-        return self.tool_executor
-    
-    def _format_tools_for_langchain(self) -> list:
-        """Format tools for LangChain."""
-        from langchain_core.tools import StructuredTool
-        from pydantic import BaseModel, Field, create_model
-        
-        langchain_tools = []
-        for tool_def in self.tools.values():
-            # Create a Pydantic model for the tool's input schema
-            fields = {}
-            for param in tool_def.parameters:
-                field_type = str
-                if param.type == "integer":
-                    field_type = int
-                elif param.type == "number":
-                    field_type = float
-                elif param.type == "boolean":
-                    field_type = bool
-                elif param.type == "array":
-                    # Handle array types - get item type from items dict
-                    item_type = str
-                    if param.items:
-                        item_type_str = param.items.get("type", "string")
-                        if item_type_str == "integer":
-                            item_type = int
-                        elif item_type_str == "number":
-                            item_type = float
-                        elif item_type_str == "boolean":
-                            item_type = bool
-                    field_type = list[item_type]
-                elif param.type == "object":
-                    field_type = dict
-                
-                if param.required:
-                    fields[param.name] = (field_type, Field(description=param.description))
-                else:
-                    fields[param.name] = (Optional[field_type], Field(default=None, description=param.description))
-            
-            InputModel = create_model(f"{tool_def.name}_input", **fields)
-            
-            # Create a placeholder async function for the tool
-            async def placeholder_coroutine(**kwargs):
-                return kwargs
-            
-            # Create the LangChain tool
-            lc_tool = StructuredTool(
-                name=tool_def.name,
-                description=tool_def.description,
-                args_schema=InputModel,
-                coroutine=placeholder_coroutine,
-            )
-            langchain_tools.append(lc_tool)
-        
-        return langchain_tools
-    
+        self._graph = self._build_graph()
+        logger.debug("[ORCHESTRATOR] Initialization complete")
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     async def process_message(
         self,
         user_message: str,
-        user_id:UUID,
-        session_id: str = "default",
-        auth_token: Optional[str] = None,
-        company_id: Optional[str] = None,
-    ) -> AgentResponse:
-        """
-        Process a user message and return agent response.
-        
-        Args:
-            user_message: The user's input
-            session_id: Session ID for conversation tracking
-            auth_token: JWT token for backend authentication
-            company_id: Override company ID for this request
-            
-        Returns:
-            AgentResponse with message and metadata
-        """
-        # Override company ID if provided
-        if company_id:
-            self.company_id = company_id
-        
-        # Initialize follow-up count if needed
-        if session_id not in self.followup_counts:
-            self.followup_counts[session_id] = 0
-        
-        # Load conversation history from persistent storage
-        history = await self.memory.get_history(session_id, limit=10)
-        print("History:", history)
-        # Analyze query for routing (pass history for context)
-        analysis = await self.router.analyze_query(user_message, history)
-        
-        # Check if follow-up is needed
-        if analysis.needs_followup and self.followup_counts[session_id] < self.config.MAX_FOLLOWUP_QUESTIONS:
-            followup = await self._generate_followup(user_message, analysis.missing_info)
-            self.followup_counts[session_id] += 1
-            
-            # Store in persistent memory
-            await self.memory.save(session_id, user_id, "user", user_message)
-            await self.memory.save(session_id, user_id, "assistant", followup)
-            
-            return AgentResponse(
-                message=followup,
-                needs_followup=True,
-                followup_question=followup,
-                metadata={"analysis": analysis.__dict__}
+        user_id: Any,
+        session_id: str,
+        user_context: Any | None,
+        company_id: str,
+    ) -> OrchestratorResponse:
+        """Process a single user message through the orchestrator graph."""
+        logger.info(
+            "[ORCHESTRATOR] Processing message",
+            user_id=str(user_id),
+            session_id=session_id,
+            company_id=str(company_id),
+            message_preview=user_message[:200],
+        )
+
+        initial_state: AgentState = {
+            "messages": [HumanMessage(content=user_message)],
+            "user_id": str(user_id),
+            "session_id": session_id,
+            "company_id": str(company_id),
+            "query_type": None,
+            "needs_followup": False,
+            "followup_question": None,
+            "sub_agent_used": None,
+            "tool_calls": [],
+            "final_response": None,
+        }
+
+        try:
+            # Run the graph
+            logger.debug("[ORCHESTRATOR] Invoking LangGraph state graph...")
+            final_state = await self._graph.ainvoke(initial_state)
+            logger.debug("[ORCHESTRATOR] LangGraph invocation complete")
+        except Exception as exc:
+            logger.error(
+                "[ORCHESTRATOR] Graph execution failed",
+                error=str(exc),
+                traceback=traceback.format_exc(),
             )
-        
-        # Reset follow-up count on new complete query
-        self.followup_counts[session_id] = 0
-        
-        # Get appropriate model
-        model_id = self.router.get_model_for_query(analysis)
-        
-        # Build messages for Bedrock (from history)
-        messages = self._build_messages_from_history(user_message, history)
-        
-        # Call Bedrock with tools
-        response = await self._call_bedrock_with_tools(
-            messages=messages,
-            model_id=model_id,
-            auth_token=auth_token,
+            return OrchestratorResponse(
+                message=f"I'm sorry, an internal error occurred: {exc}",
+            )
+
+        response = OrchestratorResponse(
+            message=final_state.get("final_response") or "I'm sorry, I couldn't process your request.",
+            needs_followup=final_state.get("needs_followup", False),
+            followup_question=final_state.get("followup_question"),
+            sub_agent_used=final_state.get("sub_agent_used"),
+            tool_calls=final_state.get("tool_calls"),
         )
-        
-        # Store in persistent memory
-        await self.memory.save(session_id, user_id, "user", user_message)
-        await self.memory.save(
-            session_id, 
-            user_id,
-            "assistant", 
-            response.message,
-            tool_calls=response.tools_used,
-            metadata={"model_used": model_id}
+
+        logger.info(
+            "[ORCHESTRATOR] Message processing complete",
+            sub_agent_used=response.sub_agent_used,
+            needs_followup=response.needs_followup,
+            tool_calls_count=len(response.tool_calls) if response.tool_calls else 0,
+            response_preview=response.message[:200],
         )
-        
+
         return response
-    
-    def _build_messages_from_history(
-        self, 
-        user_message: str, 
-        history: list[ChatMessage]
-    ) -> list:
-        """Build message list for LangChain from chat history."""
-        messages = []
-        
-        # Add conversation history
-        for msg in history:
-            if msg.role == "user":
-                messages.append(HumanMessage(content=msg.content))
-            elif msg.role == "assistant":
-                messages.append(AIMessage(content=msg.content))
-        
-        # Add current message
-        messages.append(HumanMessage(content=user_message))
-        
-        return messages
-    
-    async def _call_bedrock_with_tools(
-        self,
-        messages: list,
-        model_id: str,
-        auth_token: Optional[str] = None,
-    ) -> AgentResponse:
-        """Call LangChain with tool use."""
-        tools_used = []
-        
-        try:
-            # Get LangChain tools
-            langchain_tools = self._format_tools_for_langchain()
-            
-            # Select appropriate LLM based on model_id
-            if model_id == self.config.ORCHESTRATOR_MODEL:
-                llm = self.orchestrator_llm
-            else:
-                llm = self.simple_llm
-            
-            # Bind tools to LLM
-            llm_with_tools = llm.bind_tools(langchain_tools)
-            
-            # Add system message to the beginning
-            full_messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
-            
-            # Initial call
-            response = await llm_with_tools.ainvoke(full_messages)
-            
-            # Handle tool use loop
-            while response.tool_calls:
-                # Process each tool call
-                tool_results = []
-                for tool_call in response.tool_calls:
-                    tool_name = tool_call["name"]
-                    tool_input = tool_call["args"]
-                    tool_call_id = tool_call["id"]
-                    
-                    tools_used.append(tool_name)
-                    
-                    # Execute the tool
-                    result = await self._execute_tool(
-                        tool_name,
-                        tool_input,
-                        auth_token
-                    )
-                    
-                    # Create tool message
-                    tool_message = ToolMessage(
-                        content=json.dumps(result),
-                        tool_call_id=tool_call_id,
-                    )
-                    tool_results.append(tool_message)
-                
-                # Add assistant message with tool calls and tool results to messages
-                messages.append(response)
-                messages.extend(tool_results)
-                
-                # Continue conversation
-                full_messages = [SystemMessage(content=SYSTEM_PROMPT)] + messages
-                response = await llm_with_tools.ainvoke(full_messages)
-            
-            # Extract final response text
-            final_message = response.content
-            
-            return AgentResponse(
-                message=final_message,
-                tools_used=tools_used,
-                metadata={
-                    "model_used": model_id,
-                }
-            )
-            
-        except Exception as e:
-            return AgentResponse(
-                message=f"I encountered an error processing your request: {str(e)}",
-                metadata={"error": str(e)}
-            )
-    
-    async def _execute_tool(
-        self,
-        tool_name: str,
-        tool_input: dict,
-        auth_token: Optional[str] = None,
-    ) -> dict:
-        """Execute a tool and return results."""
-        if tool_name not in self.tools:
-            return {"error": f"Unknown tool: {tool_name}"}
-        
-        tool = self.tools[tool_name]
-        executor = self._get_tool_executor(auth_token)
-        
-        # Extract path parameters from input
-        path_params = {}
-        query_params = {}
-        
-        for param in tool.parameters:
-            if param.name in tool_input:
-                # Check if this is a path parameter
-                if f"{{{param.name}}}" in tool.endpoint:
-                    path_params[param.name] = tool_input[param.name]
-                else:
-                    query_params[param.name] = tool_input[param.name]
-        
-        return await executor.execute(tool, query_params, path_params)
-    
-    async def _generate_followup(self, user_message: str, missing_info: list[str]) -> str:
-        """Generate a follow-up question for missing information."""
-        prompt = FOLLOWUP_PROMPT.format(
-            user_message=user_message,
-            missing_info="\n".join(f"- {info}" for info in missing_info)
+
+    # ------------------------------------------------------------------
+    # Graph construction
+    # ------------------------------------------------------------------
+
+    def _build_graph(self) -> Any:
+        """Construct and compile the LangGraph StateGraph."""
+        logger.debug("[ORCHESTRATOR] Building LangGraph StateGraph")
+        graph = StateGraph(AgentState)
+
+        # Add nodes
+        graph.add_node("load_history", self._load_history)
+        graph.add_node("classify_intent", self._classify_intent)
+        graph.add_node("run_query", self._run_query_agent)
+        graph.add_node("run_action", self._run_action_agent)
+        graph.add_node("save_memory", self._save_memory)
+
+        # Edges
+        graph.set_entry_point("load_history")
+        graph.add_edge("load_history", "classify_intent")
+
+        # Conditional routing after classification
+        graph.add_conditional_edges(
+            "classify_intent",
+            self._route_after_classification,
+            {
+                "query": "run_query",
+                "action": "run_action",
+                "followup_needed": "save_memory",
+            },
         )
-        
+
+        graph.add_edge("run_query", "save_memory")
+        graph.add_edge("run_action", "save_memory")
+        graph.add_edge("save_memory", END)
+
+        compiled = graph.compile()
+        logger.debug("[ORCHESTRATOR] StateGraph compiled successfully")
+        return compiled
+
+    # ------------------------------------------------------------------
+    # Node implementations
+    # ------------------------------------------------------------------
+
+    async def _load_history(self, state: AgentState) -> dict:
+        """Load recent chat history and prepend as context messages."""
+        logger.debug(
+            "[ORCHESTRATOR] Loading chat history",
+            session_id=state["session_id"],
+        )
+
         try:
-            response = await self.simple_llm.ainvoke(prompt)
-            return response.content
-            
-        except Exception:
-            # Fallback generic question
-            return f"I need a bit more information. Could you please clarify: {missing_info[0]}?"
-    
-    async def clear_session(self, session_id: str):
-        """Clear conversation history for a session."""
-        await self.memory.clear(session_id)
-        if session_id in self.followup_counts:
-            del self.followup_counts[session_id]
-    
-    async def close(self):
-        """Cleanup resources."""
-        if self.tool_executor:
-            await self.tool_executor.close()
+            history_messages = await self._memory.get_history(
+                state["session_id"], limit=10
+            )
+            logger.debug(
+                "[ORCHESTRATOR] History loaded",
+                history_count=len(history_messages),
+            )
+        except Exception as exc:
+            logger.error(
+                "[ORCHESTRATOR] Failed to load history, continuing without it",
+                error=str(exc),
+            )
+            history_messages = []
+
+        context_msgs: list[Any] = []
+        for msg in history_messages:
+            if msg.role == "user":
+                context_msgs.append(HumanMessage(content=msg.content))
+            else:
+                context_msgs.append(AIMessage(content=msg.content))
+
+        # Prepend history before the current user message
+        current_messages = list(state["messages"])
+        all_messages = context_msgs + current_messages
+
+        logger.debug(
+            "[ORCHESTRATOR] Messages prepared for classification",
+            history_msgs=len(context_msgs),
+            current_msgs=len(current_messages),
+            total_msgs=len(all_messages),
+        )
+
+        return {"messages": all_messages}
+
+    async def _classify_intent(self, state: AgentState) -> dict:
+        """Use the orchestrator LLM to classify user intent."""
+        logger.debug(
+            "[ORCHESTRATOR] Classifying intent",
+            model=self._config.ORCHESTRATOR_MODEL,
+            message_count=len(state["messages"]),
+        )
+
+        llm = ChatOpenAI(
+            model=self._config.ORCHESTRATOR_MODEL,
+            temperature=self._config.ORCHESTRATOR_TEMPERATURE,
+            max_tokens=self._config.ORCHESTRATOR_MAX_TOKENS,
+            api_key=self._config.OPENAI_API_KEY,
+        )
+
+        classification_messages = [
+            SystemMessage(content=ORCHESTRATOR_SYSTEM_PROMPT),
+            *state["messages"],
+        ]
+
+        try:
+            response = await llm.ainvoke(classification_messages)
+            content = response.content.strip()
+            logger.debug(
+                "[ORCHESTRATOR] Raw classifier response",
+                raw_content=content[:500],
+            )
+        except Exception as exc:
+            logger.error(
+                "[ORCHESTRATOR] LLM classification call failed",
+                error=str(exc),
+                traceback=traceback.format_exc(),
+            )
+            return {"query_type": "query"}
+
+        # Parse the JSON response
+        try:
+            # Handle possible markdown code-block wrapping
+            if content.startswith("```"):
+                content = content.split("```")[1]
+                if content.startswith("json"):
+                    content = content[4:]
+                content = content.strip()
+
+            parsed = json.loads(content)
+            query_type = parsed.get("query_type", "query")
+            followup_q = parsed.get("followup_question")
+        except (json.JSONDecodeError, IndexError) as parse_exc:
+            logger.warning(
+                "[ORCHESTRATOR] Failed to parse classifier output, defaulting to query",
+                raw_output=content,
+                parse_error=str(parse_exc),
+            )
+            query_type = "query"
+            followup_q = None
+
+        # Safety net: override "followup_needed" when the user message is
+        # clearly a query or action.  This prevents the LLM from being
+        # overly cautious and asking "do you want me to…?" for obvious
+        # requests like "list all areas".
+        if query_type == "followup_needed":
+            user_text = self._get_last_user_text(state)
+            override = self._heuristic_classify(user_text)
+            if override is not None:
+                logger.warning(
+                    "[ORCHESTRATOR] Overriding followup_needed with heuristic",
+                    original="followup_needed",
+                    override=override,
+                    user_text=user_text[:200],
+                )
+                query_type = override
+                followup_q = None
+
+        logger.info(
+            "[ORCHESTRATOR] Intent classified",
+            query_type=query_type,
+            has_followup=followup_q is not None,
+        )
+
+        updates: dict[str, Any] = {"query_type": query_type}
+
+        if query_type == "followup_needed" and followup_q:
+            updates["needs_followup"] = True
+            updates["followup_question"] = followup_q
+            updates["final_response"] = followup_q
+            updates["sub_agent_used"] = "orchestrator"
+            logger.info(
+                "[ORCHESTRATOR] Routing to follow-up",
+                followup_question=followup_q[:200],
+            )
+
+        return updates
+
+    # ------------------------------------------------------------------
+    # Heuristic helpers
+    # ------------------------------------------------------------------
+
+    # Keywords that strongly signal a "query" intent
+    _QUERY_KEYWORDS = [
+        "list", "show", "get", "give", "fetch", "display", "what",
+        "which", "how many", "how much", "tell me", "find", "search",
+        "view", "see", "check", "look up", "lookup", "retrieve",
+        "count", "total", "top", "bottom", "lowest", "highest",
+        "best", "worst", "average", "compare", "report", "summary",
+        "details", "detail", "info", "status", "stock",
+    ]
+
+    # Keywords that strongly signal an "action" intent
+    _ACTION_KEYWORDS = [
+        "create", "add", "insert", "make", "new", "update", "edit",
+        "change", "modify", "set", "increase", "decrease", "delete",
+        "remove", "assign", "unassign", "enable", "disable", "activate",
+        "deactivate", "apply", "upload", "import",
+    ]
+
+    @staticmethod
+    def _get_last_user_text(state: AgentState) -> str:
+        """Extract the last user message text from the state."""
+        for msg in reversed(state.get("messages", [])):
+            if isinstance(msg, HumanMessage) and msg.content:
+                return msg.content
+        return ""
+
+    @classmethod
+    def _heuristic_classify(cls, user_text: str) -> str | None:
+        """Return 'query' or 'action' if the text clearly matches, else None."""
+        if not user_text:
+            return None
+        lower = user_text.lower().strip()
+
+        # Check action keywords first (they're more specific)
+        for kw in cls._ACTION_KEYWORDS:
+            if lower.startswith(kw) or f" {kw} " in f" {lower} ":
+                return "action"
+
+        # Then check query keywords
+        for kw in cls._QUERY_KEYWORDS:
+            if lower.startswith(kw) or f" {kw} " in f" {lower} ":
+                return "query"
+
+        # If the message ends with "?" it's very likely a query
+        if lower.endswith("?"):
+            return "query"
+
+        return None
+
+    @staticmethod
+    def _route_after_classification(state: AgentState) -> str:
+        """Return the routing key based on the classified intent."""
+        route = state.get("query_type") or "query"
+        logger.info("[ORCHESTRATOR] Routing decision", route=route)
+        return route
+
+    async def _run_query_agent(self, state: AgentState) -> dict:
+        """Delegate to the query sub-agent."""
+        logger.info("[ORCHESTRATOR] Delegating to query sub-agent")
+        return await run_query_agent(state, self._config)
+
+    async def _run_action_agent(self, state: AgentState) -> dict:
+        """Delegate to the action sub-agent."""
+        logger.info("[ORCHESTRATOR] Delegating to action sub-agent")
+        return await run_action_agent(state, self._config)
+
+    async def _save_memory(self, state: AgentState) -> dict:
+        """Persist the interaction to DynamoDB."""
+        user_message = ""
+        for msg in state["messages"]:
+            if isinstance(msg, HumanMessage):
+                user_message = msg.content  # last user message
+
+        assistant_response = state.get("final_response") or ""
+
+        logger.debug(
+            "[ORCHESTRATOR] Saving memory",
+            session_id=state["session_id"],
+            user_message_preview=user_message[:100],
+            assistant_response_preview=assistant_response[:100],
+            sub_agent=state.get("sub_agent_used"),
+            tool_calls_count=len(state.get("tool_calls", [])),
+        )
+
+        try:
+            await self._memory.save_interaction(
+                session_id=state["session_id"],
+                user_id=state["user_id"],
+                user_message=user_message,
+                assistant_response=assistant_response,
+                tool_calls=state.get("tool_calls"),
+                sub_agent_used=state.get("sub_agent_used") or "",
+                needs_followup=state.get("needs_followup", False),
+                followup_question=state.get("followup_question"),
+            )
+            logger.debug("[ORCHESTRATOR] Memory saved successfully")
+        except Exception as exc:
+            logger.error(
+                "[ORCHESTRATOR] Failed to save memory",
+                error=str(exc),
+                traceback=traceback.format_exc(),
+            )
+
+        return {}

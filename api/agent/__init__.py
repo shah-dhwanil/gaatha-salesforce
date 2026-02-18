@@ -1,11 +1,8 @@
 """
-AgentCore-based AI Chatbot for Sales Management.
+Agentic sales assistant module.
 
-This module provides an agentic AI assistant that can:
-- Answer analytical questions about sales, routes, distributors, etc.
-- Perform actions like creating products, updating visibility, managing schemes
-- Use the FastAPI backend as tools via MCP Gateway
+Provides an orchestrator-based system using LangGraph that classifies user
+intent (query vs. action), routes to specialised sub-agents, manages
+conversation memory in DynamoDB, and uses explicit HTTP-based tools to call
+the REST API for all CRUD operations.
 """
-
-__version__ = "0.1.0"
-
