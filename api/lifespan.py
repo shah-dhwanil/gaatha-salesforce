@@ -4,6 +4,7 @@ FastAPI lifespan context manager for application startup and shutdown.
 This module provides a lifespan context manager that handles:
 - Logging configuration
 - Database connection pool initialization and cleanup
+- DynamoDB agent memory table provisioning
 """
 
 from contextlib import asynccontextmanager
@@ -11,6 +12,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 
+from api.agent.memory import ChatMemory
 from api.sentry import setup_sentry
 from api.settings import get_settings
 from api.database import close_db_pool, init_db_pool
@@ -52,6 +54,18 @@ async def lifespan(app: FastAPI):
             "Database connection pool initialized",
             **pool_stats,
         )
+
+        # Ensure DynamoDB agent memory table exists
+        if settings.AGENT.MEMORY_BACKEND == "dynamodb":
+            memory = ChatMemory(
+                backend=settings.AGENT.MEMORY_BACKEND,
+                table_name=settings.AGENT.TABLE_NAME,
+                region=settings.AWS.region_name,
+                aws_access_key_id=settings.AWS.access_key_id,
+                aws_secret_access_key=settings.AWS.secret_access_key,
+            )
+            await memory.ensure_table_exists()
+            logger.debug("DynamoDB agent memory table ready")
 
         logger.debug("Application startup completed successfully")
 

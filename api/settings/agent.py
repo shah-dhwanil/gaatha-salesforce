@@ -1,11 +1,14 @@
 """
 Agent configuration settings using Pydantic.
 """
+
 from pydantic import BaseModel, Field
+
+
 class AgentConfig(BaseModel):
     ORCHESTRATOR_MODEL: str = Field(
         default="gpt-5-mini",
-        description="The model used for the agent orchestrator",
+        description="The model used for the agent orchestrator / intent classifier",
     )
     ORCHESTRATOR_MAX_TOKENS: int = Field(
         default=4096,
@@ -17,7 +20,7 @@ class AgentConfig(BaseModel):
     )
     SIMPLE_MODEL: str = Field(
         default="gpt-5-mini",
-        description="The model used for simple agent tasks",
+        description="The model used for simple agent tasks (query sub-agent)",
     )
     SIMPLE_MAX_TOKENS: int = Field(
         default=2048,
@@ -26,6 +29,18 @@ class AgentConfig(BaseModel):
     SIMPLE_TEMPERATURE: float = Field(
         default=0.1,
         description="Temperature setting for the simple agent model",
+    )
+    COMPLEX_MODEL: str = Field(
+        default="gpt-4.1-mini",
+        description="The model used for complex agent tasks (action sub-agent)",
+    )
+    COMPLEX_MAX_TOKENS: int = Field(
+        default=4096,
+        description="Maximum tokens for the complex agent model",
+    )
+    COMPLEX_TEMPERATURE: float = Field(
+        default=0.0,
+        description="Temperature setting for the complex agent model",
     )
     COMPLEXITY_THRESHOLD: float = Field(
         default=0.7,
@@ -44,18 +59,18 @@ class AgentConfig(BaseModel):
         description="Maximum number of follow-up questions allowed",
     )
     MEMORY_BACKEND: str = Field(
-        default="in-memory",
-        description="Type of memory backend for the agent",
+        default="dynamodb",
+        description="Type of memory backend for the agent (dynamodb or in-memory)",
     )
     MEMORY_RETENTION_DAYS: int = Field(
         default=7,
         description="Number of days to retain memory data",
     )
-    TABLE_NAME:str = Field(
+    TABLE_NAME: str = Field(
         default="agent_memory",
-        description="Database table name for storing agent memory",
+        description="DynamoDB table name for storing agent memory",
     )
     OPENAI_API_KEY: str = Field(
         default="",
-        description="API key for accessing OpenAPI services",
+        description="API key for accessing OpenAI services",
     )
