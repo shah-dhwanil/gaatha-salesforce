@@ -333,10 +333,10 @@ class ChatMemory:
             logger.debug("[MEMORY] DynamoDB query", session_id=session_id, limit=limit)
             resp = self._table.query(
                 KeyConditionExpression=Key("session_id").eq(session_id),
-                ScanIndexForward=True,
+                ScanIndexForward=False,
                 Limit=limit,
             )
-            items = resp.get("Items", [])
+            items = reversed(resp.get("Items", []))
             logger.debug("[MEMORY] DynamoDB query result", item_count=len(items))
             return items
 
