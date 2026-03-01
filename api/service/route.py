@@ -224,7 +224,7 @@ class RouteService:
             )
 
             # Validate pagination parameters
-            if limit < 1 or limit > 100:
+            if limit < 1 or limit > 1000:
                 raise RouteValidationException(
                     message="Limit must be between 1 and 100",
                     field="limit",

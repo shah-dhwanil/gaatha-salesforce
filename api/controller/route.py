@@ -250,7 +250,7 @@ async def list_routes(
     ] = None,
     limit: Annotated[
         int,
-        Query(ge=1, le=100, description="Number of routes to return (1-100)"),
+        Query(ge=1, le=1000, description="Number of routes to return (1-100)"),
     ] = 20,
     offset: Annotated[
         int,

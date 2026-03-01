@@ -26,8 +26,8 @@ class RetailerCreate(BaseModel):
         ..., min_length=10, max_length=15, description="Mobile number"
     )
     email: Optional[EmailStr] = Field(None, description="Email address")
-    gst_no: str = Field(..., min_length=15, max_length=15, description="GST number")
-    pan_no: str = Field(..., min_length=10, max_length=10, description="PAN number")
+    gst_no: Optional[str] = Field(None, min_length=15, max_length=15, description="GST number")
+    pan_no: Optional[str] = Field(None, min_length=10, max_length=10, description="PAN number")
     license_no: Optional[str] = Field(
         None, max_length=255, description="License number"
     )
@@ -56,10 +56,12 @@ class RetailerCreate(BaseModel):
 
     @field_validator("gst_no", "pan_no", "mobile_number", "pin_code")
     @classmethod
-    def validate_codes(cls, v: str) -> str:
+    def validate_codes(cls, v: Optional[str]) -> Optional[str]:
         """Validate and normalize code fields."""
-        if not v or not v.strip():
-            raise ValueError("Field cannot be empty")
+        if v is None:
+            return None
+        if not v.strip():
+            raise ValueError("Field cannot be empty string")
         return v.strip().upper()
 
     @field_validator("license_no")
