@@ -25,8 +25,10 @@ jobs:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: salesgaatha-org/theforce
         IMAGE_TAG: latest
-      run: sudo docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      run: docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+    
     - name: Delete Old docker container
-      run: sudo docker rm -f backend || true
+      run: docker rm -f backend || true
+    
     - name: Run Docker Container
-      run: sudo docker run -d --env-file .env -p 8000:8000 --name backend $ECR_REGISTRY/$ECR_REPOSITORY
+      run: docker run -d --env-file .env -p 8000:8000 --name backend $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
