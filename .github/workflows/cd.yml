@@ -31,4 +31,4 @@ jobs:
       run: docker rm -f backend || true
     
     - name: Run Docker Container
-      run: docker run -d --env-file .env -p 8000:8000 --name backend $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      run: docker run -d --env-file /home/ubuntu/.env -p 8000:8000 --name backend $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
