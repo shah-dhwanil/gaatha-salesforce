@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+compose.yaml
+docker-compose.yml
+
+# Documentation
+README.md
+TODO.md
+*.md
+
+# Data files
+*.csv
+test_data.csv
+
+# Dev container
+.devcontainer/
+
+# Testing
+tests/
+pytest.ini
+conftest.py
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Environment files (should be injected at runtime)
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

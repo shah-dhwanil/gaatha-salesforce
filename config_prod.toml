@@ -4,15 +4,15 @@
 app_name = "Salesforce"
 app_version = "0.1.0"
 debug = false
-environment = "DEV"
+environment = "PROD"
 
 # -----------------------------------------------------------------------------
 # Server settings (ServerConfig)
 # -----------------------------------------------------------------------------
 [server]
-host = "127.0.0.1"
-port = 9000
-workers = 1
+host = "0.0.0.0"
+port = 8000
+workers = 2
 reload = false
 
 cors_enabled = true
@@ -32,7 +32,7 @@ rate_limit_per_minute = 60
 # -----------------------------------------------------------------------------
 [postgres]
 pool_min_size = 1
-pool_max_size = 2
+pool_max_size = 4
 pool_max_inactive_connection_lifetime = 300.0
 pool_timeout = 10.0
 

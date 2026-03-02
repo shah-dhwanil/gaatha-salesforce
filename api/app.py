@@ -128,8 +128,8 @@ async def custom_swagger_ui():
     return HTMLResponse(content=template, status_code=200)
 
 
-@app.get("/health/{id}")
-async def health_check(id: int):
+@app.get("/health")
+async def health_check():
     """Health check endpoint."""
     from api.database import get_db_pool
 
