@@ -19,6 +19,8 @@ class AgentState(TypedDict):
 
     Attributes:
         messages: Conversation message history (managed by ``add_messages`` reducer).
+        current_user_message: The raw text of the current user message. Stored 
+            separately to prevent ``add_messages`` reducer reordering issues.
         user_id: UUID of the requesting user.
         session_id: Chat session identifier.
         company_id: Company UUID (determines the tenant schema).
@@ -31,6 +33,7 @@ class AgentState(TypedDict):
     """
 
     messages: Annotated[list[BaseMessage], add_messages]
+    current_user_message: str
     user_id: str
     session_id: str
     company_id: str

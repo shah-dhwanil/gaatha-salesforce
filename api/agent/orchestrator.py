@@ -20,9 +20,10 @@ from dataclasses import dataclass
 from typing import Any
 
 import structlog
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, SystemMessage
 from langgraph.graph import END, StateGraph
+
+from langchain_openai import ChatOpenAI
 
 from api.agent.agents.action_agent import run_action_agent
 from api.agent.agents.query_agent import run_query_agent
@@ -88,6 +89,7 @@ class SalesAgentOrchestrator:
 
         initial_state: AgentState = {
             "messages": [HumanMessage(content=user_message)],
+            "current_user_message": user_message,
             "user_id": str(user_id),
             "session_id": session_id,
             "company_id": str(company_id),
@@ -204,14 +206,28 @@ class SalesAgentOrchestrator:
             else:
                 context_msgs.append(AIMessage(content=msg.content))
 
-        # Prepend history before the current user message
+        # Remove existing messages to rebuild them in chronological order.
         current_messages = list(state["messages"])
-        all_messages = context_msgs + current_messages
+        removals = [RemoveMessage(id=m.id) for m in current_messages]
+        
+        # Recreate current messages with new IDs so LangGraph properly appends them.
+        recreated_current: list[Any] = []
+        import uuid
+        for m in current_messages:
+            if isinstance(m, HumanMessage):
+                recreated_current.append(HumanMessage(content=m.content, id=str(uuid.uuid4())))
+            elif isinstance(m, AIMessage):
+                recreated_current.append(AIMessage(content=m.content, id=str(uuid.uuid4())))
+            else:
+                # Fallback, just in case (e.g. SystemMessage, which shouldn't be here)
+                recreated_current.append(m)
+
+        all_messages = removals + context_msgs + recreated_current
 
         logger.debug(
             "[ORCHESTRATOR] Messages prepared for classification",
             history_msgs=len(context_msgs),
-            current_msgs=len(current_messages),
+            current_msgs=len(recreated_current),
             total_msgs=len(all_messages),
         )
 
@@ -382,10 +398,8 @@ class SalesAgentOrchestrator:
 
     async def _save_memory(self, state: AgentState) -> dict:
         """Persist the interaction to DynamoDB."""
-        user_message = ""
-        for msg in state["messages"]:
-            if isinstance(msg, HumanMessage):
-                user_message = msg.content  # last user message
+        # Use the dedicated state key to avoid msg reducer reordering bugs.
+        user_message = state.get("current_user_message") or ""
 
         assistant_response = state.get("final_response") or ""
 
