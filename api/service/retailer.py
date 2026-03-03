@@ -252,7 +252,7 @@ class RetailerService:
             )
 
             # Validate pagination parameters
-            if limit < 1 or limit > 100:
+            if limit < 1 or limit > 10000:
                 raise RetailerValidationException(
                     message="Limit must be between 1 and 100",
                     field="limit",

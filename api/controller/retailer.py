@@ -260,7 +260,7 @@ async def list_retailers(
     ] = None,
     limit: Annotated[
         int,
-        Query(ge=1, le=100, description="Number of retailers to return (1-100)"),
+        Query(ge=1, le=100000, description="Number of retailers to return (1-100)"),
     ] = 20,
     offset: Annotated[
         int,

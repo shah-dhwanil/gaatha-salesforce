@@ -623,7 +623,6 @@ class ProductRepository:
                     INNER JOIN brand b 
                         ON p.brand_id = b.id
                     WHERE p.is_active = TRUE
-
             """
             params = []
             param_count = 0
@@ -1179,10 +1178,10 @@ class ProductRepository:
             shop_id,
         )
         get_price_query = """
-        SELECT p.gst_rate, pp.mrp, pp.min_order_quantity
+        SELECT p.gst_rate, pp.mrp, pp.min_order_quantity, pp.margins
         FROM products p
         JOIN product_prices pp ON pp.product_id = p.id
-        JOIN areas a ON pp.area_id = a.id
+        LEFT JOIN areas a ON pp.area_id = a.id
         WHERE p.id = $1 AND (pp.area_id = ANY ($2) OR pp.area_id IS NULL) AND pp.is_active = TRUE
         ORDER BY get_area_priority(a.type) DESC
         LIMIT 1;
@@ -1198,7 +1197,8 @@ class ProductRepository:
                 areas_releated_shop_id["nation_id"],
             ],
         )
+        print(rows)
         if not rows:
             return None
         else:
-            return rows["mrp"], rows["gst_rate"], MinOrderQuantities.model_validate_json(rows["min_order_quantity"]) if rows["min_order_quantity"] else None
+            return rows["mrp"], rows["gst_rate"], MinOrderQuantities.model_validate_json(rows["min_order_quantity"]) if rows["min_order_quantity"] else None, ProductMargins.model_validate_json(rows["margins"]) if rows["margins"] else None

@@ -111,10 +111,10 @@ class OrderService:
                         value=str(item.product_id),
                     )
                 
-                item_amount = Decimal(str(product[0])) * Decimal(str(item.quantity))
+                item_amount = Decimal(str(product[3].retailer.purchase_price)) * Decimal(str(item.quantity))
                 base_amount += item_amount
-                cgst_amount += item_amount * Decimal(str(product[1]/2))/100
-                sgst_amount += item_amount * Decimal(str(product[1]/2))/100
+                cgst_amount += 0
+                sgst_amount += 0
                 print("Product ID:", item.product_id, "Amount:", item_amount, "CGST:", cgst_amount, "SGST:", sgst_amount)
             
             # Calculate net amount (base - discount)
@@ -227,7 +227,7 @@ class OrderService:
             amounts = await self._calculate_order_amounts(
                 order_data.retailer_id, order_data.items
             )
-
+            print("Order amounts calculated:", amounts)
             # Generate order ID
             order_id = uuid4()
 

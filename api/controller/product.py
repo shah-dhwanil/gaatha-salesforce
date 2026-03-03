@@ -244,7 +244,7 @@ async def list_products(
     ] = None,
     limit: Annotated[
         int,
-        Query(description="Maximum number of products to return", ge=1, le=100),
+        Query(description="Maximum number of products to return", ge=1, le=10000),
     ] = 20,
     offset: Annotated[
         int,

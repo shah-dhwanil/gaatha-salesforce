@@ -295,7 +295,7 @@ async def list_users_by_role(
     ] = None,
     limit: Annotated[
         int,
-        Query(ge=1, le=100, description="Number of users to return (1-100)"),
+        Query(ge=1, le=10000, description="Number of users to return (1-1000)"),
     ] = 20,
     offset: Annotated[
         int,
@@ -321,7 +321,7 @@ async def list_users_by_role(
             limit=limit,
             offset=offset,
         )
-
+        print(users)
         return ListResponseModel(
             status_code=status.HTTP_200_OK,
             data=users,
