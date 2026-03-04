@@ -414,7 +414,7 @@ class UserRepository:
         JOIN salesforce.company c ON u.company_id = c.id
         JOIN members m ON u.id = m.id
         LEFT JOIN areas a ON m.area_id = a.id
-        WHERE u.company_id = $1
+        WHERE u.company_id = $1 AND m.role NOT IN ('RETAILER', 'DISTRIBUTOR')
         """
         if is_active is not None:
             query += " AND u.is_active = $4"
