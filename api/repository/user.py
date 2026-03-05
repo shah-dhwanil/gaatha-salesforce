@@ -426,6 +426,17 @@ class UserRepository:
             rs = await connection.fetch(query, company_id, limit, offset)
         if not rs:
             raise UserNotFoundException(field="company_id", message="Users not found.")
+        query = """
+        SELECT count(u.id) as total
+        FROM salesforce.users u
+        JOIN salesforce.company c ON u.company_id = c.id
+        JOIN members m ON u.id = m.id
+        LEFT JOIN areas a ON m.area_id = a.id
+        WHERE u.company_id = $1 AND m.role NOT IN ('RETAILER', 'DISTRIBUTOR')
+        """
+        if is_active is not None:
+            query += " AND u.is_active = $2"
+        total = await connection.fetchval(query, company_id, is_active) if is_active is not None else await connection.fetchval(query, company_id)
         return [
             UserListResponse(
                 id=record["id"],
@@ -439,7 +450,7 @@ class UserRepository:
                 is_active=record["is_active"],
             )
             for record in rs
-        ]
+        ],total
 
     async def get_user_by_role(
         self,
@@ -489,6 +500,17 @@ class UserRepository:
             rs = await connection.fetch(query, role, limit, offset)
         if not rs:
             return []
+        query = """
+        SELECT COUNT(u.id) as total
+        FROM salesforce.users u
+        JOIN salesforce.company c ON u.company_id = c.id
+        JOIN members m ON u.id = m.id
+        LEFT JOIN areas a ON m.area_id = a.id
+        WHERE m.role = $1
+        """
+        if is_active is not None:
+            query += " AND u.is_active = $2"
+        total = await connection.fetchval(query, role, is_active) if is_active is not None else await connection.fetchval(query, role)
         return [
             UserListResponse(
                 id=record["id"],
@@ -502,7 +524,7 @@ class UserRepository:
                 is_active=record["is_active"],
             )
             for record in rs
-        ]
+        ],total
 
     async def update_user(
         self, user_id: UUID, user: UserUpdate, connection: Optional[Connection] = None

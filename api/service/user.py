@@ -235,20 +235,12 @@ class UserService:
 
             # Get users from repository
             async with self.db_pool.acquire() as conn:
-                users = await self.repository.get_users_by_company_id(
+                users,total_count = await self.repository.get_users_by_company_id(
                     company_id=company_id,
                     is_active=is_active,
                     limit=limit,
                     offset=offset,
                     connection=conn,
-                )
-
-                # Count total users for pagination
-                # Note: Repository would need a count method - adding estimate based on response
-                total_count = (
-                    len(users)
-                    if offset == 0 and len(users) < limit
-                    else len(users) + offset
                 )
 
             logger.debug(
@@ -321,21 +313,13 @@ class UserService:
 
             # Get users from repository
             async with self.db_pool.acquire() as conn:
-                users = await self.repository.get_user_by_role(
+                users,total_count = await self.repository.get_user_by_role(
                     company_id=company_id,
                     role=role,
                     is_active=is_active,
                     limit=limit,
                     offset=offset,
                     connection=conn,
-                )
-
-                # Count total users for pagination
-                # Note: Repository would need a count method - adding estimate based on response
-                total_count = (
-                    len(users)
-                    if offset == 0 and len(users) < limit
-                    else len(users) + offset
                 )
 
             logger.debug(
