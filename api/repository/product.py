@@ -658,7 +658,6 @@ class ProductRepository:
                 params.append(offset)
 
             rows = await connection.fetch(query, *params)
-            print(rows)
             products = []
             for row in rows:
                 products.append(
@@ -1197,7 +1196,6 @@ class ProductRepository:
                 areas_releated_shop_id["nation_id"],
             ],
         )
-        print(rows)
         if not rows:
             return None
         else:

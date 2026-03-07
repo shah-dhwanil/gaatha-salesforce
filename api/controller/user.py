@@ -321,7 +321,6 @@ async def list_users_by_role(
             limit=limit,
             offset=offset,
         )
-        print(users)
         return ListResponseModel(
             status_code=status.HTTP_200_OK,
             data=users,
